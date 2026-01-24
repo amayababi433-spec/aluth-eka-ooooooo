@@ -9,7 +9,7 @@
     "postinstall": "mkdir -p bin && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp && chmod a+rx bin/yt-dlp"
   },
   "engines": {
-    "node": "22.x"
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
