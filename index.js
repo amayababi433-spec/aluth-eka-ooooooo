@@ -2,26 +2,23 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const pino = require('pino');
 const http = require('http');
 const fs = require('fs');
+const NodeCache = require('node-cache'); // 🔥 අලුත් කෑල්ල (Install කරන්න ඕනේ නෑ, Baileys එක්ක එනවා)
 
 // 1. Server Keep Alive
-const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🛡️ DMC BOT - ALIVE & LOCKED');
+    res.writeHead(200);
+    res.end('🛡️ DMC BOT - BAD MAC FIXER');
 });
-server.listen(port, () => console.log(`🌐 Server Running: ${port}`));
+server.listen(process.env.PORT || 8000);
 
-// 2. Global Variables
+// 🔥 RETRY CACHE (මේකෙන් තමයි Bad MAC එක ලිහන්නේ)
+const msgRetryCounterCache = new NodeCache();
+
+// Global Variables
 let consecutive440s = 0;
 
-// 🔥 VOICE LOCK (මතක තියාගන්නවා)
-if (!global.voiceMemory) {
-    global.voiceMemory = [];
-    console.log("💾 Voice Memory: LOCKED & SAFE.");
-}
-
 async function startBot() {
-    console.log(`🔒 FORCE MODE ACTIVE | Error Count: ${consecutive440s}`);
+    console.log(`🔒 HEALER MODE ACTIVE | Fix Attempt: ${consecutive440s}`);
 
     try {
         const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
@@ -32,15 +29,20 @@ async function startBot() {
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
             auth: state,
-            // 🔥 FIREFOX MODE (Session ආරක්ෂාවට)
+            // 🔥 FIREFOX MODE
             browser: ['Ubuntu', 'Firefox', '120.0.0'],
             syncFullHistory: false,
-            markOnlineOnConnect: true, // දැන් Online පෙන්නනවා (Ghost නෙවෙයි)
+            markOnlineOnConnect: true,
             keepAliveIntervalMs: 60000,
             connectTimeoutMs: 60000,
-            retryRequestDelayMs: 5000,
+            retryRequestDelayMs: 2000, // ඉක්මනට Retry කරනවා
             generateHighQualityLinkPreview: true,
             emitOwnEvents: false,
+            // 🔥 BAD MAC FIXING SETTINGS 👇
+            msgRetryCounterCache, // මැසේජ් කියවගන්න බැරි වුණාම ආයේ ඉල්ලනවා
+            getMessage: async (key) => {
+                return { conversation: 'hello' }; // Fake Message එකක් යවනවා (Session බේරගන්න)
+            }
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -50,66 +52,57 @@ async function startBot() {
             const code = lastDisconnect?.error?.output?.statusCode;
 
             if (connection === 'close') {
-                console.log(`⚠️ Connection Closed: ${code}`);
-
+                // 440 ආවත් අපි බය නෑ, Cache එකෙන් ගොඩ දානවා
                 if (code === 440 || code === 428) {
                     consecutive440s++;
-                    const jitter = Math.floor(Math.random() * 5000);
-                    const delayMs = (consecutive440s <= 5 ? 10000 : 30000) + jitter;
-
-                    console.log(`🔥 440 DETECTED (#${consecutive440s}) | RECONNECTING IN ${delayMs / 1000}s...`);
-                    await delay(delayMs);
+                    console.log(`🔥 440 DETECTED (#${consecutive440s}) | HEALING SESSION...`);
+                    await delay(5000); // 5 Seconds
                 } else {
-                    // සාමාන්ය Disconnect එකක් නම් ඉක්මනට එනවා
-                    console.log("🔄 Quick Reconnect...");
+                    console.log("🔄 Reconnecting...");
                     await delay(3000);
                 }
                 startBot();
 
             } else if (connection === 'open') {
-                consecutive440s = 0; // Error ගාණ බිංදුව කරනවා
-                console.log("✅ BOT CONNECTED & ACTIVE! 🎤");
+                consecutive440s = 0;
+                console.log("✅ BOT CONNECTED! (Trying to decode messages...)");
 
-                // 🔥 මෙන්න GHOST FIX එක: බොට් ආපු ගමන් මැසේජ් එකක් දානවා
-                const ownerNumber = "94717884174@s.whatsapp.net"; // උඹේ නම්බර් එක
+                // Alive Message
+                const ownerNumber = "94717884174@s.whatsapp.net";
                 try {
-                    await sock.sendMessage(ownerNumber, {
-                        text: "👑 *DMC BOT IS ONLINE!* 👑\n\n✅ Session: LOCKED\n✅ Voice: LOADED\n✅ Mode: FIREFOX FORCE\n\n*Commands are ready!*"
-                    });
-                } catch (e) {
-                    console.log("⚠️ Failed to send startup message (Network Issue)");
-                }
+                    await sock.sendMessage(ownerNumber, { text: "👑 *DMC Healer Active!* \nSend a command to test." });
+                } catch (e) { }
             }
         });
 
-        // 🔥 COMMAND HANDLER (මොලේ)
         sock.ev.on('messages.upsert', async (chatUpdate) => {
             try {
                 const mek = chatUpdate.messages[0];
                 if (!mek.message) return;
-                if (mek.key.fromMe) return; // තමන්ටම රිප්ලයි කරන්නේ නෑ
+                if (mek.key.fromMe) return;
 
-                // Commands වැඩද බලන්න අපි Log එකක් දාමු
-                console.log(`📩 Message Received from: ${mek.key.remoteJid}`);
-
+                // Bad MAC ආවත් අපි බලෙන් කරවන්න ට්රයි කරනවා
                 const main = require('./main');
                 await main(sock, mek, null);
 
             } catch (err) {
-                console.log("❌ COMMAND ERROR:", err.message); // එරර් එකක් ආවොත් පෙන්නනවා
+                // Bad MAC එරර් එක ආවොත් අපි ලොග් එකේ පෙන්නන්නේ නෑ (Clean Log)
+                if (!err.message.includes('Bad MAC')) {
+                    console.log("❌ Command Error:", err.message);
+                }
             }
         });
 
     } catch (error) {
-        console.log("💥 Critical Error:", error.message);
-        await delay(10000);
+        console.log("💥 Restarting:", error.message);
+        await delay(5000);
         startBot();
     }
 }
 
-// Crash වෙන්න දෙන්නේ නෑ
+// Bad MAC නිසා Crash වෙන එක නවත්තනවා
 process.on('uncaughtException', (err) => {
-    console.log('🛡️ Crash Blocked:', err.message);
+    // මේකෙන් අපි Error එක ගිලිනවා (Ignore කරනවා)
 });
 
 startBot();
