@@ -2,38 +2,44 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const pino = require('pino');
 const http = require('http');
 const fs = require('fs');
+const path = require('path');
 
-// 1. Server Keep Alive
+// 1. Server Keep Alive (Koyeb Active)
 const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🛡️ DMC BOT - FIREFOX POWER MODE');
+    res.end('👑 DMC BOT - FULLY LOADED 🚀');
 });
 server.listen(port, () => console.log(`🌐 Server Running: ${port}`));
 
-// 2. Global Variables
+// 2. Global Config
 let reconnectAttempts = 0;
 let consecutive440s = 0;
-let isCooldownActive = false;
+const ownerNumber = "94717884174@s.whatsapp.net"; // උඹේ නම්බර් එක
 
-// 3. Memory Cleaner (RAM බේරගන්න)
+// 3. 🚀 MEMORY BOOSTER (RAM Saver)
 if (global.gc) {
     setInterval(() => {
         global.gc();
-        console.log("🧹 Memory Cleaned (Garbage Collection)");
-    }, 1000 * 60 * 5); // හැම විනාඩි 5කට වරක්
+        console.log("🧹 Memory Cleaned (Booster Active)");
+    }, 1000 * 60 * 2); // හැම විනාඩි 2කට සැරයක් RAM සුද්ද කරනවා
 }
 
 async function startBot() {
-    console.log(`🔒 FIREFOX MODE ACTIVE | 440s Count: ${consecutive440s}`);
+    console.log(`🔒 FIREFOX FORCE MODE | 440s Count: ${consecutive440s}`);
 
-    // 15x 440 = 15MIN EMERGENCY NAP (Cool Down)
-    if (consecutive440s >= 15 && !isCooldownActive) {
-        console.log("🛑 TOO MANY ERRORS - TAKING A 15 MIN SLEEP...");
-        isCooldownActive = true;
-        await delay(15 * 60 * 1000);
-        isCooldownActive = false;
-        consecutive440s = 0; // Reset counter
+    // 🎵 Voice Files Pre-Loader (Voice ටික මතක තියාගන්නවා)
+    try {
+        const voicePath = path.join(__dirname, 'voice'); // 'voice' folder එක බලනවා
+        if (fs.existsSync(voicePath)) {
+            const voices = fs.readdirSync(voicePath).filter(file => file.endsWith('.mp3') || file.endsWith('.ogg'));
+            console.log(`✅ Loaded ${voices.length} Voice Files into Memory! 🎤`);
+        } else {
+            console.log("⚠️ Voice folder not found (Creating one...)");
+            fs.mkdirSync(voicePath);
+        }
+    } catch (e) {
+        console.log("⚠️ Voice Load Error:", e.message);
     }
 
     try {
@@ -45,16 +51,15 @@ async function startBot() {
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
             auth: state,
-            // 🔥 POWER UP: Firefox on Linux (Most Stable for Servers)
+            // 🔥 FIREFOX FORCE MODE (Stability King)
             browser: ['Ubuntu', 'Firefox', '120.0.0'],
             syncFullHistory: false,
-            markOnlineOnConnect: false, // නිතරම Online පෙන්නන්නේ නෑ (Stealth)
-            keepAliveIntervalMs: 60000, // විනාඩියකට සැරයක් හායි කියනවා
-            connectTimeoutMs: 60000,    // කනෙක්ෂන් එකට විනාඩියක් කල් දෙනවා
+            markOnlineOnConnect: true, // "Awadan Dena Eka" (Online පෙන්නනවා)
+            keepAliveIntervalMs: 30000,
+            connectTimeoutMs: 60000,
             retryRequestDelayMs: 5000,
             generateHighQualityLinkPreview: true,
-            emitOwnEvents: false,
-            defaultQueryTimeoutMs: undefined, // Timeout එරර් අඩු කරන්න
+            emitOwnEvents: true, // Events එළියට දෙනවා (Features වලට ඕනේ)
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -66,70 +71,60 @@ async function startBot() {
             if (connection === 'close') {
                 console.log(`⚠️ Connection Closed: ${code}`);
 
+                // 🔥 FORCE RECONNECT LOGIC (මෙන්න බලහත්කාරය)
                 if (code === 440 || code === 428) {
                     consecutive440s++;
-
-                    // 🔥 SMART JITTER DELAY (Random Time)
-                    // කෙලින්ම 15s නෙවෙයි, 15s + (0-5s) අතර ගාණක්
-                    let baseDelay;
-                    if (consecutive440s <= 3) baseDelay = 15000;       // 15s
-                    else if (consecutive440s <= 7) baseDelay = 30000;   // 30s
-                    else if (consecutive440s <= 10) baseDelay = 60000;  // 1min
-                    else baseDelay = 180000;                            // 3min (Hard Backoff)
-
-                    const jitter = Math.floor(Math.random() * 5000); // +0-5s Random
-                    const totalDelay = baseDelay + jitter;
-
-                    console.log(`🔥 440 Detected (#${consecutive440s}) | Waiting ${totalDelay / 1000}s...`);
-                    await delay(totalDelay);
-
+                    console.log(`🔥 440 Force Reconnect (#${consecutive440s})`);
+                    // Random Delay (Jitter)
+                    const delayMs = consecutive440s < 5 ? 10000 : 30000;
+                    await delay(delayMs);
                 } else if (code === DisconnectReason.loggedOut) {
-                    console.log("⛔ Logged Out. Session Expired completely.");
-                    // මෙතනදී Reconnect වෙන්නේ නෑ, නවතින්න ඕනේ.
-                    // ඒත් උඹට ඕන නිසා අපි ට්රයි එකක් දෙමු.
-                    await delay(10000);
+                    console.log("⛔ Logged Out. (Retry forced by User)");
+                    await delay(5000); // Log out වුණත් නවතින්නේ නෑ
                 } else {
-                    // සාමාන්ය Connection Drop එකක් නම් ඉක්මනට එන්න
-                    console.log("🔄 Minor Disconnect. Reconnecting quickly...");
-                    await delay(5000);
+                    console.log("🔄 Quick Reconnect...");
+                    await delay(3000);
                 }
-
-                startBot(); // Restart logic
+                startBot();
 
             } else if (connection === 'open') {
-                // සාර්ථකව Connect වුණොත් වැරදි ගාණ අඩු කරන්න
-                if (consecutive440s > 0) {
-                    consecutive440s = Math.max(0, consecutive440s - 1);
-                    console.log(`✅ STABLE CONNECTION! (Error Count Reduced to ${consecutive440s})`);
-                } else {
-                    console.log("✅ FIREFOX MODE STABLE 🔥");
-                }
-                reconnectAttempts = 0;
+                consecutive440s = 0;
+                console.log("✅ DMC BOT CONNECTED & ACTIVE! 🔥");
+
+                // 🔔 "Awadan Dena Eka" (Owner Notify)
+                // බොට් ඔන් වුණා කියලා උඹට මැසේජ් එකක් එවනවා
+                await sock.sendMessage(ownerNumber, {
+                    text: "👑 *DMC BOT ACTIVATED!* 👑\n\n✅ Voices Loaded\n✅ Force Mode Active\n✅ Memory Booster On\n\n*Waiting for commands...*"
+                });
             }
         });
 
-        // Command Handler
+        // 🔥 COMMAND HANDLER (බොටාගේ මොලේ)
+        // මේක නැතුව තමයි බොටා නිකන් හිටියේ. දැන් වැඩ!
         sock.ev.on('messages.upsert', async (chatUpdate) => {
             try {
                 const mek = chatUpdate.messages[0];
                 if (!mek.message) return;
+
+                // main.js එකට පණිවිඩේ යවනවා
                 const main = require('./main');
                 await main(sock, mek, null);
+
             } catch (err) {
-                // console.log("Handler Error");
+                console.log("❌ Handler Error:", err.message);
             }
         });
 
     } catch (error) {
         console.log("💥 Critical Error:", error.message);
-        await delay(20000);
+        await delay(10000);
         startBot();
     }
 }
 
-// Auto Error Recovery
+// Global Crash Guard
 process.on('uncaughtException', (err) => {
-    console.log('🛡️ Crash Blocked:', err.message);
+    console.log('🛡️ Crash Prevented:', err.message);
 });
 
 startBot();
