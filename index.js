@@ -2,29 +2,28 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const pino = require('pino');
 const http = require('http');
 
-// Server (Koyeb alive)
+// Server
 const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🔒 DMC BOT - ULTRA STABLE MODE 🔒');
+    res.end('🔒 DMC BOT - FINAL 440 FIX 🔒');
 });
 server.listen(port, () => console.log(`🌐 Server: ${port}`));
 
-// 🛡️ 440 DEFENSE SYSTEM
+// 🛡️ ULTIMATE 440 PROTECTION
 let consecutive440s = 0;
-let last440Time = 0;
-const MAX_440_BURST = 5;
-const COOLDOWN_440 = 2 * 60 * 1000; // 2 minutes
+let total440s = 0;
+let isInCooldown = false;
 
 async function startBot() {
-    console.log("🔒 ULTRA STABLE MODE - Existing Session Only");
+    console.log("🔒 FINAL 440 FIX MODE");
 
-    // 440 Burst Protection
-    const now = Date.now();
-    if (consecutive440s >= MAX_440_BURST && (now - last440Time) < COOLDOWN_440) {
-        console.log("🛑 440 BURST DETECTED - 2MIN COOLDOWN");
-        await delay(COOLDOWN_440);
-        consecutive440s = 0;
+    // 10x 440 cooldown (ULTIMATE PROTECTION)
+    if (total440s >= 10 && !isInCooldown) {
+        console.log("🛑 10x440 HIT - 10MIN EMERGENCY COOLDOWN");
+        isInCooldown = true;
+        setTimeout(() => { isInCooldown = false; }, 10 * 60 * 1000);
+        await delay(10000);
     }
 
     try {
@@ -36,17 +35,18 @@ async function startBot() {
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
             auth: state,
-            browser: ['Ubuntu', 'Chrome', '120.0.0'], // Stable browser
+            browser: ['Ubuntu', 'Chrome', '115.0.0'],
+            // 440 KILLER SETTINGS
             syncFullHistory: false,
-            markOnlineOnConnect: false, // 440 Prevention #1
-            keepAliveIntervalMs: 30000,  // Slower keepalive
-            connectTimeoutMs: 60000,
-            defaultQueryTimeoutMs: 60000,
-            // 440 Prevention Configs
+            markOnlineOnConnect: false,
+            keepAliveIntervalMs: 60000,     // 1min (slow)
+            connectTimeoutMs: 30000,        // Fast timeout
+            defaultQueryTimeoutMs: 30000,
             generateHighQualityLinkPreview: false,
-            retryRequestDelayMs: 5000,
+            retryRequestDelayMs: 10000,     // Slow retry
             emitOwnEvents: false,
-            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'),
+            // MOBILE MODE (440 Prevention)
+            mobile: true,
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -56,48 +56,45 @@ async function startBot() {
             const reason = lastDisconnect?.error?.output?.statusCode;
 
             if (connection === 'close') {
-                console.log(`⚠️ Code: ${reason}`);
+                console.log(`⚠️ Code: ${reason} | Total440s: ${total440s}`);
 
                 if (reason === 440) {
                     consecutive440s++;
-                    last440Time = Date.now();
-                    console.log(`🔥 440 x${consecutive440s}/${MAX_440_BURST} - Smart Delay...`);
+                    total440s++;
+                    console.log(`🔥 440 x${consecutive440s} | TOTAL: ${total440s}`);
 
-                    // Progressive backoff (440 killer)
-                    const delayMs = Math.min(10000 + (consecutive440s * 5000), 60000);
-                    await delay(delayMs);
+                    // Progressive delay (10s → 2min)
+                    const delayTime = Math.min(10000 + (consecutive440s * 10000), 120000);
+                    console.log(`⏳ Smart delay: ${delayTime / 1000}s`);
+                    await delay(delayTime);
+                    consecutive440s = 0; // Reset burst counter
                 } else {
-                    consecutive440s = 0; // Reset counter
+                    consecutive440s = 0;
                     await delay(5000);
                 }
 
                 startBot();
             } else if (connection === 'open') {
+                total440s = Math.max(0, total440s - 1); // Slight forgiveness
                 consecutive440s = 0;
-                console.log("✅ ULTRA STABLE CONNECTION! 🔥");
-                console.log("🎯 440 Protection: ACTIVE");
+                console.log("✅ STABLE CONNECTION! Total440s:", total440s);
             }
         });
 
-        // Safe message handler
         sock.ev.on('messages.upsert', async (chatUpdate) => {
             try {
                 const mek = chatUpdate.messages[0];
                 if (!mek.message || mek.key.remoteJid?.endsWith('@broadcast')) return;
                 require('./main')(sock, mek);
-            } catch (err) {
-                // Silent fail
-            }
+            } catch { }
         });
 
     } catch (error) {
-        console.log("💥 Restarting:", error.message);
+        console.log("💥 Restart:", error.message);
         await delay(10000);
         startBot();
     }
 }
 
 startBot();
-
-// Ultimate crash protection
 process.on('uncaughtException', startBot);
