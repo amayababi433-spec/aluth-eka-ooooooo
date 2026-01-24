@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const { commands } = require('./command');
 const { streamToDrive } = require('./lib/drive-engine');
 const { addToQueue } = require('./lib/downloader');
+const yts = require('yt-search');
 
 // Config load logic
 let config;
@@ -56,6 +57,22 @@ module.exports = async (sock, mek, store) => {
             // ▶️ CHOICE 1: DIRECT WHATSAPP FILE (Via Queue Engine)
             if (choice === "1") {
                 await reply(`👑 *Added to Download Queue...*\nPlease wait! 📥`);
+
+                // URL Check - Search if not URL
+                if (!session.url.startsWith("http")) {
+                    await reply(`🔍 Searching for: "${session.url}"...`);
+                    try {
+                        const search = await yts(session.url);
+                        if (search.all.length > 0) {
+                            session.url = search.all[0].url; // Take first result
+                            await reply(`🎵 Found: ${search.all[0].title}`);
+                        } else {
+                            return reply("❌ No results found!");
+                        }
+                    } catch (e) {
+                        return reply("❌ Search Error!");
+                    }
+                }
 
                 // 🔥 අලුත් Engine එකට වැඩේ බාර දෙනවා
                 addToQueue({
