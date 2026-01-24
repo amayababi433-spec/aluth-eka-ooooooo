@@ -1,95 +1,88 @@
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, delay, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const http = require('http');
-const fs = require('fs');
 
-// 1. Server Keep Alive
+// Server
+const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('🍪 DMC BOT - COOKIE MODE ACTIVE');
+    res.end('🍪 CREDS.JSON = WHATSAPP COOKIE 🔒');
 });
-server.listen(process.env.PORT || 8000);
+server.listen(port);
+
+// COOKIE PROTECTION (READ-ONLY)
+let stabilityScore = 0;
 
 async function startBot() {
-    console.log("🚀 STARTING BOT WITH 'COOKIE' METHOD...");
+    console.log(`🍪 COOKIE MODE | Stability: ${stabilityScore}`);
 
-    // 1. ෆයිල් එකෙන් "Cookie" එක (creds.json) විතරක් ගන්නවා
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
-    const { version } = await fetchLatestBaileysVersion();
-    const logger = pino({ level: 'silent' });
+    try {
+        // LOAD CREDS.JSON (COOKIE)
+        const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
+        const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket({
-        version,
-        logger: logger,
-        printQRInTerminal: false,
-        auth: {
-            creds: state.creds, // මේක තමයි අපේ "Cookie" එක (Main ID)
-            // 🔥 විශේෂ තාක්ෂණය: අනිත් ඔක්කොම යතුරු RAM එකේ හදන්න (Disk එකට ලියන්න එපා)
-            // මේක නිසා IP මාරු වුණත්, Bad MAC එරර් එක හාඩ් එකේ සේව් වෙන්නේ නෑ.
-            keys: makeCacheableSignalKeyStore(state.keys, logger),
-        },
-        // Chrome Browser එකක් වගේ පෙනී සිටීම (Cookies වැඩ කරන්න මේක ඕනේ)
-        browser: Browsers.macOS("Chrome"),
-        syncFullHistory: false,
-        markOnlineOnConnect: true,
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000,
-        retryRequestDelayMs: 2000,
-        generateHighQualityLinkPreview: true,
-        emitOwnEvents: false,
-    });
+        const sock = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: false,
+            auth: state,
+            // COOKIE-FRIENDLY CONFIG
+            browser: Browsers.ubuntu("Chrome"),
+            syncFullHistory: false,
+            markOnlineOnConnect: false,  // No spam
+            keepAliveIntervalMs: 90000,  // 90s (stable)
+            connectTimeoutMs: 60000,
+            generateHighQualityLinkPreview: false,
+            retryRequestDelayMs: 12000,
+        });
 
-    // 🛑 COOKIE PROTECTION SYSTEM
-    // සාමාන්‍යයෙන් බොට් හැම තත්පරේම ෆයිල් සේව් කරනවා. අපි ඒක නවත්තනවා.
-    // අපි සේව් කරන්නේ "creds" (Cookie) එක අප්ඩේට් වුණොත් විතරයි.
-    sock.ev.on('creds.update', (update) => {
-        // ඉතාම අත්‍යවශ්‍ය දේකට විතරක් සේව් කරනවා (Login refresh වගේ)
-        if (update.me || update.account || update.myAppStateKeyId) {
-            saveCreds(update);
-        }
-        // අනිත් වෙලාවට Keys සේව් කරන්නේ නෑ. (Bad MAC එන්නේ Keys වලින්)
-    });
+        // BLOCK ALL WRITES (COOKIE PROTECTION)
+        sock.ev.on('creds.update', () => {
+            console.log("🍪 WRITE BLOCKED - creds.json PROTECTED");
+            // NO saveCreds() - pure read-only
+        });
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-        const code = lastDisconnect?.error?.output?.statusCode;
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect } = update;
+            const code = lastDisconnect?.error?.output?.statusCode;
 
-        if (connection === 'close') {
-            console.log(`⚠️ Connection Closed: ${code}`);
+            if (connection === 'close') {
+                stabilityScore--;
+                console.log(`⚠️ ${code} | Stability: ${stabilityScore}`);
 
-            // මොනවා වුණත් අපි ආයේ මුල ඉඳන් "Cookie" එක ලෝඩ් කරනවා
-            // එතකොට පරණ ලෙඩ මැකිලා යනවා
-            console.log("🔄 Reloading Cookie (creds.json)...");
-            await delay(3000);
-            startBot();
+                // Smart delays (NO file ops)
+                const delayMs = stabilityScore > 0 ? 15000 :
+                    stabilityScore > -3 ? 30000 : 60000;
 
-        } else if (connection === 'open') {
-            console.log("✅ BOT CONNECTED (COOKIE MODE) 🍪");
-            console.log("🛡️ Corrupted Keys will NOT be saved to disk.");
+                await delay(delayMs);
+                startBot();
+            } else if (connection === 'open') {
+                stabilityScore++;
+                console.log(`✅ COOKIE LOADED! Stability: ${stabilityScore}`);
 
-            // Test
+                // Send status to owner
+                setTimeout(() => {
+                    sock.sendMessage("94717884174@s.whatsapp.net", {
+                        text: `🍪 *SESSION STABLE* (${stabilityScore})\n🔒 No surgery detected`
+                    }).catch(() => { });
+                }, 5000);
+            }
+        });
+
+        sock.ev.on('messages.upsert', async (chatUpdate) => {
             try {
-                const ownerNumber = "94717884174@s.whatsapp.net";
-                await sock.sendMessage(ownerNumber, { text: "👑 *DMC BOT* \nCookie Method: ACTIVE 🍪" });
-            } catch (e) { }
-        }
-    });
+                const mek = chatUpdate.messages[0];
+                if (!mek.message || mek.key.remoteJid?.endsWith('@broadcast')) return;
+                require('./main')(sock, mek);
+            } catch { }
+        });
 
-    sock.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const mek = chatUpdate.messages[0];
-            if (!mek.message) return;
-            const main = require('./main');
-            await main(sock, mek, null);
-        } catch (err) {
-            // Error handling
-        }
-    });
+    } catch (error) {
+        console.log("🍪 Safe restart - cookie untouched");
+        await delay(20000);
+        startBot();
+    }
 }
 
-// Crash Block
-process.on('uncaughtException', (err) => {
-    // console.log('Crash Prevented');
-});
-
 startBot();
+process.on('uncaughtException', () => startBot());
