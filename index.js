@@ -1,79 +1,103 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const http = require('http');
-const fs = require('fs');
 
-// Server Keep Alive (Koyeb Active තියන්න)
+// Server (Koyeb alive)
 const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🔒 DMC BOT - SESSION LOCKED MODE 🔒');
+    res.end('🔒 DMC BOT - ULTRA STABLE MODE 🔒');
 });
-server.listen(port, () => console.log(`🌐 Server Running on Port: ${port}`));
+server.listen(port, () => console.log(`🌐 Server: ${port}`));
+
+// 🛡️ 440 DEFENSE SYSTEM
+let consecutive440s = 0;
+let last440Time = 0;
+const MAX_440_BURST = 5;
+const COOLDOWN_440 = 2 * 60 * 1000; // 2 minutes
 
 async function startBot() {
-    console.log("🔒 Starting Bot with EXISTING Session (Locked Mode)...");
+    console.log("🔒 ULTRA STABLE MODE - Existing Session Only");
 
-    // 1. GitHub එකේ තියෙන ෆයිල් ටික ලෝඩ් කරගන්නවා
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
-    const { version } = await fetchLatestBaileysVersion();
+    // 440 Burst Protection
+    const now = Date.now();
+    if (consecutive440s >= MAX_440_BURST && (now - last440Time) < COOLDOWN_440) {
+        console.log("🛑 440 BURST DETECTED - 2MIN COOLDOWN");
+        await delay(COOLDOWN_440);
+        consecutive440s = 0;
+    }
 
-    const sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }), // ලොග් ඕන නෑ
-        printQRInTerminal: false, // QR එපා කිව්වනේ, ඒක ඕෆ් කළා
-        auth: state, // තියෙන Session එකම පාවිච්චි කරනවා
-        browser: Browsers.macOS("Desktop"),
-        syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000,
-        retryRequestDelayMs: 2000,
-        generateHighQualityLinkPreview: true,
-        // Session පිච්චෙන එක නවත්තන ආරක්ෂක කෑලි
-        emitOwnEvents: true,
-        markOnlineOnConnect: true,
-    });
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
+        const { version } = await fetchLatestBaileysVersion();
 
-    // Creds Update වුණත් අපි ඒක පරිස්සමෙන් Save කරනවා (නැත්නම් Ignore කරනවා)
-    sock.ev.on('creds.update', saveCreds);
+        const sock = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: false,
+            auth: state,
+            browser: ['Ubuntu', 'Chrome', '120.0.0'], // Stable browser
+            syncFullHistory: false,
+            markOnlineOnConnect: false, // 440 Prevention #1
+            keepAliveIntervalMs: 30000,  // Slower keepalive
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000,
+            // 440 Prevention Configs
+            generateHighQualityLinkPreview: false,
+            retryRequestDelayMs: 5000,
+            emitOwnEvents: false,
+            shouldIgnoreJid: jid => jid?.endsWith('@broadcast'),
+        });
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        sock.ev.on('creds.update', saveCreds);
 
-        if (connection === 'close') {
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect } = update;
             const reason = lastDisconnect?.error?.output?.statusCode;
-            console.log(`⚠️ Connection Closed Code: ${reason}`);
 
-            // 🔥 මොන එරර් එක ආවත් (401, 440, 500) ෆයිල් මකන්නේ නෑ!
-            // කෙලින්ම Reconnect වෙනවා විතරයි.
-            console.log("🔒 Session Protected. Force Reconnecting...");
+            if (connection === 'close') {
+                console.log(`⚠️ Code: ${reason}`);
 
-            await delay(3000); // තත්පර 3කින් ආයේ ට්රයි කරනවා
-            startBot(); // මුල ඉඳන් ආයේ Existing File එකෙන්ම එනවා
+                if (reason === 440) {
+                    consecutive440s++;
+                    last440Time = Date.now();
+                    console.log(`🔥 440 x${consecutive440s}/${MAX_440_BURST} - Smart Delay...`);
 
-        } else if (connection === 'open') {
-            console.log("✅ BOT CONNECTED WITH GITHUB SESSION!");
-            console.log("🔒 Session is SECURE.");
-        }
-    });
+                    // Progressive backoff (440 killer)
+                    const delayMs = Math.min(10000 + (consecutive440s * 5000), 60000);
+                    await delay(delayMs);
+                } else {
+                    consecutive440s = 0; // Reset counter
+                    await delay(5000);
+                }
 
-    // Messages Handler
-    sock.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const mek = chatUpdate.messages[0];
-            if (!mek.message) return;
-            const main = require('./main');
-            await main(sock, mek, null);
-        } catch (err) {
-            console.log("❌ Error:", err.message);
-        }
-    });
+                startBot();
+            } else if (connection === 'open') {
+                consecutive440s = 0;
+                console.log("✅ ULTRA STABLE CONNECTION! 🔥");
+                console.log("🎯 440 Protection: ACTIVE");
+            }
+        });
 
-    // Crash වුණොත් නවතින්න එපා, ආයේ නැගිටපන්
-    process.on('uncaughtException', (err) => {
-        console.log('🛡️ Blocked Crash:', err.message);
+        // Safe message handler
+        sock.ev.on('messages.upsert', async (chatUpdate) => {
+            try {
+                const mek = chatUpdate.messages[0];
+                if (!mek.message || mek.key.remoteJid?.endsWith('@broadcast')) return;
+                require('./main')(sock, mek);
+            } catch (err) {
+                // Silent fail
+            }
+        });
+
+    } catch (error) {
+        console.log("💥 Restarting:", error.message);
+        await delay(10000);
         startBot();
-    });
+    }
 }
 
 startBot();
+
+// Ultimate crash protection
+process.on('uncaughtException', startBot);
