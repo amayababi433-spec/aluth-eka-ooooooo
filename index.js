@@ -6,14 +6,14 @@ const fs = require('fs');
 // 1. Server Keep Alive
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('🛡️ DMC BOT - RAM ONLY MODE');
+    res.end('🍪 DMC BOT - COOKIE MODE ACTIVE');
 });
 server.listen(process.env.PORT || 8000);
 
 async function startBot() {
-    console.log("🚀 STARTING BOT IN 'READ-ONLY' MODE...");
+    console.log("🚀 STARTING BOT WITH 'COOKIE' METHOD...");
 
-    // 1. ෆයිල් ටික ලෝඩ් කරනවා (Load Auth)
+    // 1. ෆයිල් එකෙන් "Cookie" එක (creds.json) විතරක් ගන්නවා
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
     const logger = pino({ level: 'silent' });
@@ -23,12 +23,13 @@ async function startBot() {
         logger: logger,
         printQRInTerminal: false,
         auth: {
-            creds: state.creds,
-            // 🔥 විශේෂ තාක්ෂණය: Keys ටික RAM එකට ගන්නවා (Disk එකට ලියන්නේ නෑ)
-            // මේකෙන් Bad MAC එරර් එක ෆයිල් එකට වදින්නේ නෑ.
+            creds: state.creds, // මේක තමයි අපේ "Cookie" එක (Main ID)
+            // 🔥 විශේෂ තාක්ෂණය: අනිත් ඔක්කොම යතුරු RAM එකේ හදන්න (Disk එකට ලියන්න එපා)
+            // මේක නිසා IP මාරු වුණත්, Bad MAC එරර් එක හාඩ් එකේ සේව් වෙන්නේ නෑ.
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
-        browser: ["Ubuntu", "Linux", "20.0.04"], // Linux Server Standard
+        // Chrome Browser එකක් වගේ පෙනී සිටීම (Cookies වැඩ කරන්න මේක ඕනේ)
+        browser: Browsers.macOS("Chrome"),
         syncFullHistory: false,
         markOnlineOnConnect: true,
         connectTimeoutMs: 60000,
@@ -36,18 +37,17 @@ async function startBot() {
         retryRequestDelayMs: 2000,
         generateHighQualityLinkPreview: true,
         emitOwnEvents: false,
-        defaultQueryTimeoutMs: undefined,
     });
 
-    // 🛑 STOP SAVING CORRUPTED KEYS
-    // සාමාන්‍යයෙන් මෙතන saveCreds දානවා. ඒත් අපි දාන්නේ නෑ.
-    // අපි 'creds' (Main ID) එක විතරක් අප්ඩේට් කරනවා. Keys අප්ඩේට් කරන්නේ නෑ.
+    // 🛑 COOKIE PROTECTION SYSTEM
+    // සාමාන්‍යයෙන් බොට් හැම තත්පරේම ෆයිල් සේව් කරනවා. අපි ඒක නවත්තනවා.
+    // අපි සේව් කරන්නේ "creds" (Cookie) එක අප්ඩේට් වුණොත් විතරයි.
     sock.ev.on('creds.update', (update) => {
-        // උඹේ නම, නම්බර් එක වගේ දේවල් විතරක් සේව් කරනවා
+        // ඉතාම අත්‍යවශ්‍ය දේකට විතරක් සේව් කරනවා (Login refresh වගේ)
         if (update.me || update.account || update.myAppStateKeyId) {
             saveCreds(update);
         }
-        // Keys (Pre-Key, Session) සේව් කරන්නේ නෑ. ඒවා RAM එකේ විතරයි.
+        // අනිත් වෙලාවට Keys සේව් කරන්නේ නෑ. (Bad MAC එන්නේ Keys වලින්)
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -56,16 +56,22 @@ async function startBot() {
 
         if (connection === 'close') {
             console.log(`⚠️ Connection Closed: ${code}`);
-            
-            // මොන එරර් එක ආවත් අපි රිස්ටාර්ට් කරනවා.
-            // රිස්ටාර්ට් වෙද්දි ආයේ මුල ඉඳන් "පිරිසිදු ෆයිල්" ලෝඩ් වෙනවා.
-            console.log("🔄 Reloading fresh files from disk...");
+
+            // මොනවා වුණත් අපි ආයේ මුල ඉඳන් "Cookie" එක ලෝඩ් කරනවා
+            // එතකොට පරණ ලෙඩ මැකිලා යනවා
+            console.log("🔄 Reloading Cookie (creds.json)...");
             await delay(3000);
             startBot();
 
         } else if (connection === 'open') {
-            console.log("✅ BOT CONNECTED (RAM MODE) 🚀");
-            console.log("🛡️ Disk Writing: DISABLED for Keys");
+            console.log("✅ BOT CONNECTED (COOKIE MODE) 🍪");
+            console.log("🛡️ Corrupted Keys will NOT be saved to disk.");
+
+            // Test
+            try {
+                const ownerNumber = "94717884174@s.whatsapp.net";
+                await sock.sendMessage(ownerNumber, { text: "👑 *DMC BOT* \nCookie Method: ACTIVE 🍪" });
+            } catch (e) { }
         }
     });
 
