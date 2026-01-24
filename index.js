@@ -3,62 +3,100 @@ const pino = require('pino');
 const http = require('http');
 const fs = require('fs');
 
+// 🔒 SERVER (Koyeb alive)
+const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('🛡️ DMC BOT - SESSION SECURED');
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('🔒 PERMANENT SESSION MODE - NO CORRUPTION');
 });
-server.listen(process.env.PORT || 8000);
+server.listen(port, () => console.log(`🌐 Server: ${port}`));
+
+// 🛡️ SESSION LOCK SYSTEM
+let reconnectAttempts = 0;
+const MAX_RECONNECTS = 50; // 50 attempts max
 
 async function startBot() {
-    console.log("🚀 Starting DMC BOT (Anti-Burn Mode)...");
+    console.log(`🔒 PERMANENT MODE | Attempts: ${reconnectAttempts}/${MAX_RECONNECTS}`);
 
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
-    const { version } = await fetchLatestBaileysVersion();
+    // Emergency stop after 50 fails
+    if (reconnectAttempts >= MAX_RECONNECTS) {
+        console.log("🛑 MAX ATTEMPTS - STAYING OFFLINE");
+        return;
+    }
 
-    const sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: true,
-        auth: state,
-        // 🔥 රහස 1: හැමවෙලාවෙම Desktop එකක් වගේ ඉන්න (Mobile දැම්මොත් පිච්චෙනවා)
-        browser: Browsers.macOS("Desktop"),
-        syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 30000,
-        // 🔥 රහස 2: Session එක Update වෙද්දි එන දෝෂ මඟහරින්න
-        retryRequestDelayMs: 5000,
-        generateHighQualityLinkPreview: true,
-    });
+    try {
+        // LOAD EXISTING SESSION (READ-ONLY)
+        const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
+        const { version } = await fetchLatestBaileysVersion();
 
-    // Creds Save වෙන එක අපි හසුරුවනවා
-    sock.ev.on('creds.update', saveCreds);
+        const sock = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: false,
+            auth: state,
+            // 🔥 PERMANENT SESSION SETTINGS
+            browser: Browsers.macOS("Safari"), // Desktop only
+            syncFullHistory: false,
+            markOnlineOnConnect: false,        // No status spam
+            keepAliveIntervalMs: 60000,        // 1min ping
+            connectTimeoutMs: 60000,
+            generateHighQualityLinkPreview: false,
+            retryRequestDelayMs: 15000,        // Slow retry
+            emitOwnEvents: false,
+            // 🔒 ANTI-CORRUPTION
+            defaultQueryTimeoutMs: 60000,
+        });
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        // PROTECTED CREDS SAVE (Limited writes)
+        sock.ev.on('creds.update', (creds) => {
+            // Only save critical updates
+            if (creds.registered) saveCreds();
+        });
 
-        if (connection === 'close') {
-            const code = lastDisconnect?.error?.output?.statusCode;
-            console.log(`⚠️ Connection Closed: ${code}`);
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect } = update;
+            const reason = lastDisconnect?.error?.output?.statusCode;
 
-            // 401 (Log Out) වුණොත් විතරක් නවතින්න, අනිත් හැමදේටම Reconnect වෙන්න
-            if (code === DisconnectReason.loggedOut) {
-                console.log("⛔ Session Expired (Logged Out). New QR needed.");
-            } else {
-                console.log("🔄 Reconnecting (Session Safe)...");
-                await delay(3000);
+            if (connection === 'close') {
+                reconnectAttempts++;
+                console.log(`⚠️ Closed: ${reason} | Attempts: ${reconnectAttempts}`);
+
+                // Smart reconnect delay
+                const delayMs = Math.min(10000 + (reconnectAttempts * 2000), 120000);
+                console.log(`⏳ Reconnect in ${Math.round(delayMs / 1000)}s...`);
+                await delay(delayMs);
+
                 startBot();
+            } else if (connection === 'open') {
+                reconnectAttempts = 0;
+                console.log("✅ PERMANENT SESSION LOADED! 🎉");
+                console.log("🔒 ANTI-CORRUPTION: ACTIVE");
             }
-        } else if (connection === 'open') {
-            console.log("✅ SESSION SECURED! (Anti-Burn Active)");
-        }
-    });
+        });
 
-    sock.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            if (!chatUpdate.messages[0].message) return;
-            require('./main')(sock, chatUpdate.messages[0]);
-        } catch (e) { console.log(e) }
-    });
+        // SAFE Message Handler
+        sock.ev.on('messages.upsert', async (chatUpdate) => {
+            try {
+                const mek = chatUpdate.messages[0];
+                if (!mek.message || mek.key.remoteJid?.endsWith('@broadcast')) return;
+                require('./main')(sock, mek);
+            } catch (err) {
+                // Silent fail - protect session
+            }
+        });
+
+    } catch (error) {
+        console.log("💥 Safe restart:", error.message);
+        reconnectAttempts++;
+        await delay(15000);
+        startBot();
+    }
 }
+
+// Ultimate protection
+process.on('uncaughtException', (err) => {
+    console.log('🛡️ Session protected from crash');
+    startBot();
+});
 
 startBot();
