@@ -1,0 +1,13 @@
+name: Koyeb Deploy
+on: [push]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: koyeb/action-deploy@v1
+      with:
+        koyeb_token: ${{ secrets.KOYEB_TOKEN }}
+        app_name: dmc-bot
+        service_name: dmc-bot-service
+        ports: "8000/http"

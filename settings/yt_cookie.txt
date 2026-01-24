@@ -1,0 +1,11 @@
+# Paste your YouTube Cookies here (Netscape format)
+# How to get cookies:
+# 1. Install "Get cookies.txt LOCALLY" extension in Chrome/Edge.
+# 2. Go to youtube.com and login.
+# 3. Click the extension -> Export.
+# 4. Open the file, copy all text, and paste it here.
+# 5. Save and Restart Bot.
+
+# Example format:
+# .youtube.com	TRUE	/	FALSE	1768840880	VISITOR_INFO1_LIVE	xxxxxxxxxxx
+# .youtube.com	TRUE	/	TRUE	1768840880	SSID	xxxxxxxxxxx
