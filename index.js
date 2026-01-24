@@ -2,23 +2,40 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const pino = require('pino');
 const http = require('http');
 const fs = require('fs');
-const NodeCache = require('node-cache'); // 🔥 අලුත් කෑල්ල (Install කරන්න ඕනේ නෑ, Baileys එක්ක එනවා)
+const path = require('path');
 
 // 1. Server Keep Alive
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('🛡️ DMC BOT - BAD MAC FIXER');
+    res.end('🚑 DMC BOT - SURGERY MODE');
 });
 server.listen(process.env.PORT || 8000);
 
-// 🔥 RETRY CACHE (මේකෙන් තමයි Bad MAC එක ලිහන්නේ)
-const msgRetryCounterCache = new NodeCache();
-
 // Global Variables
-let consecutive440s = 0;
+let isRepairing = false;
+
+// 🔥 SURGICAL CLEANER (යතුරු සුද්ද කිරීම)
+async function surgicalClean() {
+    const authPath = './auth_info_baileys';
+    if (!fs.existsSync(authPath)) return;
+
+    console.log("🩺 STARTING SURGERY: Cleaning corrupted key files...");
+    const files = fs.readdirSync(authPath);
+
+    let deletedCount = 0;
+    for (const file of files) {
+        // creds.json අත තියන්නේ නෑ (පණ වගේ රැකගන්නවා)
+        if (file !== 'creds.json') {
+            fs.unlinkSync(path.join(authPath, file));
+            deletedCount++;
+        }
+    }
+    console.log(`✅ SURGERY COMPLETE: Removed ${deletedCount} corrupted files.`);
+    console.log("🧬 Only 'creds.json' remains. Forcing Key Regeneration...");
+}
 
 async function startBot() {
-    console.log(`🔒 HEALER MODE ACTIVE | Fix Attempt: ${consecutive440s}`);
+    console.log("🚀 STARTING BOT (REPAIR EDITION)...");
 
     try {
         const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
@@ -29,20 +46,15 @@ async function startBot() {
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
             auth: state,
-            // 🔥 FIREFOX MODE
+            // 🔥 STABILITY MODE
             browser: ['Ubuntu', 'Firefox', '120.0.0'],
             syncFullHistory: false,
             markOnlineOnConnect: true,
             keepAliveIntervalMs: 60000,
             connectTimeoutMs: 60000,
-            retryRequestDelayMs: 2000, // ඉක්මනට Retry කරනවා
+            retryRequestDelayMs: 2000,
             generateHighQualityLinkPreview: true,
             emitOwnEvents: false,
-            // 🔥 BAD MAC FIXING SETTINGS 👇
-            msgRetryCounterCache, // මැසේජ් කියවගන්න බැරි වුණාම ආයේ ඉල්ලනවා
-            getMessage: async (key) => {
-                return { conversation: 'hello' }; // Fake Message එකක් යවනවා (Session බේරගන්න)
-            }
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -52,25 +64,32 @@ async function startBot() {
             const code = lastDisconnect?.error?.output?.statusCode;
 
             if (connection === 'close') {
-                // 440 ආවත් අපි බය නෑ, Cache එකෙන් ගොඩ දානවා
-                if (code === 440 || code === 428) {
-                    consecutive440s++;
-                    console.log(`🔥 440 DETECTED (#${consecutive440s}) | HEALING SESSION...`);
-                    await delay(5000); // 5 Seconds
-                } else {
-                    console.log("🔄 Reconnecting...");
-                    await delay(3000);
+                // Bad MAC හෝ 440 ආවොත් Surgery එක පටන් ගන්නවා
+                if ((code === 440 || code === 428) && !isRepairing) {
+                    console.log(`🔥 ERROR DETECTED (${code}). INITIATING SURGERY...`);
+                    isRepairing = true;
+
+                    // 1. බොට්ව පොඩ්ඩක් නිදි කරවනවා
+                    await delay(2000);
+                    // 2. කුණු ෆයිල් මකනවා
+                    await surgicalClean();
+                    // 3. ආයේ Start කරනවා
+                    isRepairing = false;
+                    startBot();
+                    return;
                 }
+
+                console.log(`⚠️ Connection Closed: ${code}. Reconnecting...`);
+                await delay(3000);
                 startBot();
 
             } else if (connection === 'open') {
-                consecutive440s = 0;
-                console.log("✅ BOT CONNECTED! (Trying to decode messages...)");
+                console.log("✅ OPERATION SUCCESSFUL! BOT CONNECTED. 🧬");
 
-                // Alive Message
-                const ownerNumber = "94717884174@s.whatsapp.net";
+                // Test Message
                 try {
-                    await sock.sendMessage(ownerNumber, { text: "👑 *DMC Healer Active!* \nSend a command to test." });
+                    const ownerNumber = "94717884174@s.whatsapp.net";
+                    await sock.sendMessage(ownerNumber, { text: "👑 *DMC REPAIR COMPLETE!* \nNew Keys Generated." });
                 } catch (e) { }
             }
         });
@@ -79,30 +98,23 @@ async function startBot() {
             try {
                 const mek = chatUpdate.messages[0];
                 if (!mek.message) return;
-                if (mek.key.fromMe) return;
-
-                // Bad MAC ආවත් අපි බලෙන් කරවන්න ට්රයි කරනවා
+                // Commands run logic
                 const main = require('./main');
                 await main(sock, mek, null);
-
             } catch (err) {
-                // Bad MAC එරර් එක ආවොත් අපි ලොග් එකේ පෙන්නන්නේ නෑ (Clean Log)
-                if (!err.message.includes('Bad MAC')) {
-                    console.log("❌ Command Error:", err.message);
-                }
+                // Bad MAC Error ආවොත් ගණන් ගන්න එපා, Surgery එකෙන් ඒක හදනවා
             }
         });
-
     } catch (error) {
-        console.log("💥 Restarting:", error.message);
+        console.log("💥 Critical Error:", error.message);
         await delay(5000);
         startBot();
     }
 }
 
-// Bad MAC නිසා Crash වෙන එක නවත්තනවා
+// Handle Crashes
 process.on('uncaughtException', (err) => {
-    // මේකෙන් අපි Error එක ගිලිනවා (Ignore කරනවා)
+    // Bad MAC errors silent කරනවා
 });
 
 startBot();
