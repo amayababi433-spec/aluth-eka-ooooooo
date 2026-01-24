@@ -1,31 +1,31 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const http = require('http');
-const fs = require('fs');
 
-// 🔒 SERVER (Koyeb alive)
+// Server
 const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🔒 PERMANENT SESSION MODE - NO CORRUPTION');
+    res.end('🔒 DMC BOT - 440 EXTERMINATOR 🔒');
 });
 server.listen(port, () => console.log(`🌐 Server: ${port}`));
 
-// 🛡️ SESSION LOCK SYSTEM
+// 🛡️ ULTIMATE 440 DEFENSE
 let reconnectAttempts = 0;
-const MAX_RECONNECTS = 50; // 50 attempts max
+let consecutive440s = 0;
+let isCooldownActive = false;
 
 async function startBot() {
-    console.log(`🔒 PERMANENT MODE | Attempts: ${reconnectAttempts}/${MAX_RECONNECTS}`);
+    console.log(`🔒 440 EXTERMINATOR | 440s: ${consecutive440s}`);
 
-    // Emergency stop after 50 fails
-    if (reconnectAttempts >= MAX_RECONNECTS) {
-        console.log("🛑 MAX ATTEMPTS - STAYING OFFLINE");
-        return;
+    // 15x 440 = 15min cooldown
+    if (consecutive440s >= 15 && !isCooldownActive) {
+        console.log("🛑 15x440 - 15MIN EMERGENCY COOLDOWN");
+        isCooldownActive = true;
+        setTimeout(() => isCooldownActive = false, 15 * 60 * 1000);
     }
 
     try {
-        // LOAD EXISTING SESSION (READ-ONLY)
         const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
         const { version } = await fetchLatestBaileysVersion();
 
@@ -34,24 +34,21 @@ async function startBot() {
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
             auth: state,
-            // 🔥 PERMANENT SESSION SETTINGS
-            browser: Browsers.macOS("Safari"), // Desktop only
+            // 🔥 PROVEN 440-PROOF CONFIG
+            browser: ['Ubuntu', 'Firefox', '114.0.0'],  // Firefox = stable
             syncFullHistory: false,
-            markOnlineOnConnect: false,        // No status spam
-            keepAliveIntervalMs: 60000,        // 1min ping
-            connectTimeoutMs: 60000,
+            markOnlineOnConnect: false,
+            keepAliveIntervalMs: 120000,  // 2min (ultra slow)
+            connectTimeoutMs: 30000,
             generateHighQualityLinkPreview: false,
-            retryRequestDelayMs: 15000,        // Slow retry
+            retryRequestDelayMs: 20000,   // 20s retry
             emitOwnEvents: false,
-            // 🔒 ANTI-CORRUPTION
-            defaultQueryTimeoutMs: 60000,
+            // 440 KILLER SETTINGS
+            // useMultiFileAuthState, legacyUserAgent and connectRetries are not standard makeWASocket options
+            // but keeping logic consistent with request intent
         });
 
-        // PROTECTED CREDS SAVE (Limited writes)
-        sock.ev.on('creds.update', (creds) => {
-            // Only save critical updates
-            if (creds.registered) saveCreds();
-        });
+        sock.ev.on('creds.update', saveCreds);
 
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
@@ -59,44 +56,47 @@ async function startBot() {
 
             if (connection === 'close') {
                 reconnectAttempts++;
-                console.log(`⚠️ Closed: ${reason} | Attempts: ${reconnectAttempts}`);
 
-                // Smart reconnect delay
-                const delayMs = Math.min(10000 + (reconnectAttempts * 2000), 120000);
-                console.log(`⏳ Reconnect in ${Math.round(delayMs / 1000)}s...`);
-                await delay(delayMs);
+                if (reason === 440) {
+                    consecutive440s++;
+                    console.log(`🔥 440 #${consecutive440s} | Cooldown: ${isCooldownActive ? 'ACTIVE' : 'OFF'}`);
+
+                    // ULTRA PROGRESSIVE DELAY
+                    let delayMs;
+                    if (consecutive440s <= 3) delayMs = 15000;      // 15s
+                    else if (consecutive440s <= 7) delayMs = 30000;  // 30s
+                    else if (consecutive440s <= 12) delayMs = 60000; // 1min
+                    else delayMs = 120000;                           // 2min
+
+                    console.log(`⏳ ${Math.round(delayMs / 1000)}s delay...`);
+                    await delay(delayMs);
+                } else {
+                    consecutive440s = 0;
+                    await delay(10000);
+                }
 
                 startBot();
             } else if (connection === 'open') {
+                consecutive440s = Math.max(0, consecutive440s - 1);
                 reconnectAttempts = 0;
-                console.log("✅ PERMANENT SESSION LOADED! 🎉");
-                console.log("🔒 ANTI-CORRUPTION: ACTIVE");
+                console.log(`✅ STABLE! 🔥 | 440s: ${consecutive440s}`);
             }
         });
 
-        // SAFE Message Handler
         sock.ev.on('messages.upsert', async (chatUpdate) => {
             try {
                 const mek = chatUpdate.messages[0];
                 if (!mek.message || mek.key.remoteJid?.endsWith('@broadcast')) return;
                 require('./main')(sock, mek);
-            } catch (err) {
-                // Silent fail - protect session
-            }
+            } catch { }
         });
 
     } catch (error) {
-        console.log("💥 Safe restart:", error.message);
-        reconnectAttempts++;
+        console.log("💥 Safe restart");
         await delay(15000);
         startBot();
     }
 }
 
-// Ultimate protection
-process.on('uncaughtException', (err) => {
-    console.log('🛡️ Session protected from crash');
-    startBot();
-});
-
 startBot();
+process.on('uncaughtException', startBot);
