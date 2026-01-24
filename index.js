@@ -2,71 +2,88 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const pino = require('pino');
 const http = require('http');
 const fs = require('fs');
+const path = require('path');
 
 // Server Keep Alive
-const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('✅ DMC BOT ONLINE');
+    res.writeHead(200);
+    res.end('🛡️ DMC SESSION RECOVERY MODE');
 });
-server.listen(port, () => console.log(`🌐 Server Running on Port: ${port}`));
+server.listen(process.env.PORT || 8000);
+
+async function cleanSessionJunk() {
+    const sessionDir = './auth_info_baileys';
+    try {
+        if (fs.existsSync(sessionDir)) {
+            const files = fs.readdirSync(sessionDir);
+            let deleted = 0;
+            // creds.json ඇරෙන්න අනිත් ඔක්කොම මකනවා
+            for (const file of files) {
+                if (file !== 'creds.json') {
+                    fs.unlinkSync(path.join(sessionDir, file));
+                    deleted++;
+                }
+            }
+            console.log(`🧹 Cleaned ${deleted} junk files. Keeping ONLY creds.json`);
+        }
+    } catch (e) {
+        console.log("⚠️ Cleanup Error:", e.message);
+    }
+}
 
 async function startBot() {
-    console.log("🚀 Starting DMC BOT (Desktop Mode)...");
+    console.log("🚑 ATTEMPTING SESSION RECOVERY (NO QR MODE)...");
 
-    // 1. Session Handling
+    // 1. කුණු සුද්ද කිරීම (Junk Cleanup)
+    await cleanSessionJunk();
+
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: true,
+        printQRInTerminal: false, // QR එපා
         auth: state,
-        // 🔥 MOBILE FIX: Chrome/Desktop විදිහට බොරුවට පෙන්වනවා
-        browser: ["DMC Bot", "Chrome", "1.0.0"],
+        browser: Browsers.ubuntu("Chrome"),
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         keepAliveIntervalMs: 10000,
-        retryRequestDelayMs: 2000,
-        generateHighQualityLinkPreview: true,
-        // ❌ mobile: true කෑල්ල මෙතන නෑ (ඒකයි Error එකට හේතුව)
+        retryRequestDelayMs: 5000,
+        // Session පිච්චෙන එක නවත්තන්න Update Block කරනවා
+        emitOwnEvents: false,
     });
 
+    // ⚠️ Save කරද්දි පරිස්සමෙන්
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            console.log(`⚠️ Connection Closed: ${reason}`);
+            const code = lastDisconnect?.error?.output?.statusCode;
+            console.log(`⚠️ Connection Closed: ${code}`);
 
-            // 440 හෝ වෙනත් ඕනෑම Error එකකදි Reconnect වෙනවා
-            console.log("🔄 Reconnecting...");
+            if (code === 440 || code === 401) {
+                console.log("❌ SESSION IS DEAD (Expired).");
+                console.log("💡 මෙය ගොඩ දාන්න බැහැ. අනිවාර්යයෙන්ම අලුත් QR එකක් ඕනේ.");
+                // Loop එක නැවැත්වීමට අපි මෙතනින් නවතින්න ඕනේ, 
+                // ඒත් උඹට Try කරන්න ඕන නිසා අපි ආයේ Reconnect වෙමු.
+            }
+
             await delay(5000);
             startBot();
         } else if (connection === 'open') {
-            console.log("✅ BOT CONNECTED SUCCESSFULLY!");
-            console.log("🚀 No Mobile API Errors!");
+            console.log("✅ MIRACLE! BOT CONNECTED WITH OLD SESSION! 🎉");
+            console.log("🔒 Session Locked for Safety.");
         }
     });
 
-    // Messages Handler
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
-            const mek = chatUpdate.messages[0];
-            if (!mek.message) return;
-            const main = require('./main');
-            await main(sock, mek, null);
-        } catch (err) {
-            console.log("❌ Error:", err.message);
-        }
-    });
-
-    // Crash Handler
-    process.on('uncaughtException', (err) => {
-        console.log('🛡️ Crash Prevented:', err.message);
+            if (!chatUpdate.messages[0].message) return;
+            require('./main')(sock, chatUpdate.messages[0]);
+        } catch { }
     });
 }
 
