@@ -58,20 +58,24 @@ module.exports = async (sock, mek, store) => {
             if (choice === "1") {
                 await reply(`👑 *Added to Download Queue...*\nPlease wait! 📥`);
 
-                // URL Check - Search if not URL
-                if (!session.url.startsWith("http")) {
-                    await reply(`🔍 Searching for: "${session.url}"...`);
-                    try {
-                        const search = await yts(session.url);
-                        if (search.all.length > 0) {
-                            session.url = search.all[0].url; // Take first result
-                            await reply(`🎵 Found: ${search.all[0].title}`);
+                if (isSongCommand) {
+                    let url = q;
+
+                    // 🔍 URL Check & Auto Search
+                    if (!url.includes('http')) {
+                        await reply(`🔍 Searching for: "${q}"...`);
+                        const searchResult = await yts(q);
+                        if (searchResult && searchResult.videos.length > 0) {
+                            url = searchResult.videos[0].url;
+                            await reply(`🎵 Found: *${searchResult.videos[0].title}*\nDownloading...`);
                         } else {
                             return reply("❌ No results found!");
                         }
-                    } catch (e) {
-                        return reply("❌ Search Error!");
                     }
+
+                    // දැන් 'url' එකේ තියෙන්නේ නියම YouTube Link එක.
+                    // ඒක Downloader එකට යවන්න.
+                    addToQueue({ url: url, from: from, mek: mek, reply: reply }, sock, reply);
                 }
 
                 // 🔥 අලුත් Engine එකට වැඩේ බාර දෙනවා

@@ -7,34 +7,35 @@ const fs = require('fs');
 const port = process.env.PORT || 8000;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('👑 DMC BOT ACTIVE 👑');
+    res.end('👑 DMC BOT - PERMANENT SESSION MODE 👑');
 });
-server.listen(port, () => console.log(`🌐 Server Running on Port: ${port}`));
+server.listen(port, () => console.log(`🌐 Server Running: ${port}`));
 
 async function startBot() {
-    console.log("🚀 Starting DMC BOT (Stable Mode)...");
+    console.log("🚀 Starting DMC BOT (Permanent Session Mode)...");
 
-    // Auth Folder Check
-    if (!fs.existsSync('./auth_info_baileys')) {
-        fs.mkdirSync('./auth_info_baileys');
-    }
-
+    // GitHub එකෙන් ආපු Original Session එක පාවිච්චි කරනවා
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'silent' }), // ලොග් ගොඩක් එන එක නවත්තනවා
         printQRInTerminal: true,
         auth: state,
-        browser: Browsers.macOS("Desktop"), // Chrome වෙනුවට macOS දාන්න (Stable)
+        browser: Browsers.macOS("Desktop"),
         syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000,
-        retryRequestDelayMs: 2000,
         generateHighQualityLinkPreview: true,
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
+        retryRequestDelayMs: 5000,
+        // 🔥 Anti-Ban / Anti-Disconnect Settings
+        markOnlineOnConnect: true,
+        defaultQueryTimeoutMs: undefined,
     });
 
+    // ⚠️ වැදගත්: Session Update වෙන්න දෙන්නේ නෑ (Read-Only)
+    // අපි creds.update එක අයින් කරනවා හෝ ලිමිට් කරනවා.
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
@@ -44,29 +45,23 @@ async function startBot() {
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`⚠️ Connection Closed: ${reason}`);
 
-            // 440, 428, 401 ආවත් අපි බය නැතුව Reconnect වෙනවා
-            console.log("🔄 Reconnecting...");
-            await delay(3000);
+            // 440 හෝ Bad MAC ආවත්, අපි Original Session එකෙන් ආයේ එනවා
+            console.log("🔄 Reconnecting with ORIGINAL Session...");
+            await delay(5000);
             startBot();
         } else if (connection === 'open') {
-            console.log("✅ BOT CONNECTED SUCCESSFULLY!");
-            // Auto Message to Owner
-            const ownerNumber = "94717884174@s.whatsapp.net";
-            try {
-                await sock.sendMessage(ownerNumber, { text: "👑 DMC Bot is Back Online! System Stable." });
-            } catch (e) {
-                console.log("⚠️ Owner msg failed (minor issue)");
-            }
+            console.log("✅ BOT CONNECTED (Permanent Session Secured)!");
+
+            // නම්බර් එකට මැසේජ් එකක් දාමු
+            await sock.sendMessage("94717884174@s.whatsapp.net", { text: "👑 DMC Bot Online! Session Secured." });
         }
     });
 
+    // Messages Handler
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             const mek = chatUpdate.messages[0];
             if (!mek.message) return;
-            // Handle Broadcast/Status
-            if (mek.key.remoteJid === 'status@broadcast') return;
-
             const main = require('./main');
             await main(sock, mek, null);
         } catch (err) {
@@ -74,6 +69,7 @@ async function startBot() {
         }
     });
 
+    // Anti-Crash
     process.on('uncaughtException', (err) => console.log('🛡️ Crash Prevented:', err.message));
 }
 
