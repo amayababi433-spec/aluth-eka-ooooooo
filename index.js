@@ -2,6 +2,17 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const P = require('pino');
 const NodeCache = require('node-cache');
 const fs = require('fs');
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 8000;
+
+app.get('/', (req, res) => {
+    res.send('Bot is running!');
+});
+
+app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+});
 
 const msgRetryCounterCache = new NodeCache();
 
