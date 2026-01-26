@@ -1,88 +1,50 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, delay } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const http = require('http');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
+const P = require('pino');
+const NodeCache = require('node-cache');
+const fs = require('fs');
 
-// Server
-const port = process.env.PORT || 8000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('🍪 CREDS.JSON = WHATSAPP COOKIE 🔒');
-});
-server.listen(port);
+const msgRetryCounterCache = new NodeCache();
 
-// COOKIE PROTECTION (READ-ONLY)
-let stabilityScore = 0;
+async function connectToWhatsApp() {
+    console.log('Connecting to WhatsApp...');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
-async function startBot() {
-    console.log(`🍪 COOKIE MODE | Stability: ${stabilityScore}`);
+    const qrcode = require('qrcode-terminal');
 
-    try {
-        // LOAD CREDS.JSON (COOKIE)
-        const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
-        const { version } = await fetchLatestBaileysVersion();
+    const sock = makeWASocket({
+        version,
+        logger: P({ level: 'silent' }),
+        printQRInTerminal: false,
+        auth: state,
+        msgRetryCounterCache,
+        browser: Browsers.macOS("Desktop"),
+    });
 
-        const sock = makeWASocket({
-            version,
-            logger: pino({ level: 'silent' }),
-            printQRInTerminal: false,
-            auth: state,
-            // COOKIE-FRIENDLY CONFIG
-            browser: Browsers.ubuntu("Chrome"),
-            syncFullHistory: false,
-            markOnlineOnConnect: false,  // No spam
-            keepAliveIntervalMs: 90000,  // 90s (stable)
-            connectTimeoutMs: 60000,
-            generateHighQualityLinkPreview: false,
-            retryRequestDelayMs: 12000,
-        });
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-        // BLOCK ALL WRITES (COOKIE PROTECTION)
-        sock.ev.on('creds.update', () => {
-            console.log("🍪 WRITE BLOCKED - creds.json PROTECTED");
-            // NO saveCreds() - pure read-only
-        });
+        if (qr) {
+            console.log('QR Code received, please scan:');
+            qrcode.generate(qr, { small: true });
+        }
 
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect } = update;
-            const code = lastDisconnect?.error?.output?.statusCode;
-
-            if (connection === 'close') {
-                stabilityScore--;
-                console.log(`⚠️ ${code} | Stability: ${stabilityScore}`);
-
-                // Smart delays (NO file ops)
-                const delayMs = stabilityScore > 0 ? 15000 :
-                    stabilityScore > -3 ? 30000 : 60000;
-
-                await delay(delayMs);
-                startBot();
-            } else if (connection === 'open') {
-                stabilityScore++;
-                console.log(`✅ COOKIE LOADED! Stability: ${stabilityScore}`);
-
-                // Send status to owner
-                setTimeout(() => {
-                    sock.sendMessage("94717884174@s.whatsapp.net", {
-                        text: `🍪 *SESSION STABLE* (${stabilityScore})\n🔒 No surgery detected`
-                    }).catch(() => { });
-                }, 5000);
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            if (shouldReconnect) {
+                connectToWhatsApp();
             }
-        });
+        } else if (connection === 'open') {
+            console.log('opened connection');
+        }
+    });
 
-        sock.ev.on('messages.upsert', async (chatUpdate) => {
-            try {
-                const mek = chatUpdate.messages[0];
-                if (!mek.message || mek.key.remoteJid?.endsWith('@broadcast')) return;
-                require('./main')(sock, mek);
-            } catch { }
-        });
+    sock.ev.on('creds.update', saveCreds);
 
-    } catch (error) {
-        console.log("🍪 Safe restart - cookie untouched");
-        await delay(20000);
-        startBot();
-    }
+    return sock;
 }
 
-startBot();
-process.on('uncaughtException', () => startBot());
+// Run the connection function
+connectToWhatsApp();
