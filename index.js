@@ -1,3 +1,4 @@
+require('dotenv').config();
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -5,18 +6,76 @@ const {
     fetchLatestBaileysVersion,
     makeCacheableSignalKeyStore,
     Browsers,
-    getContentType
+    getContentType,
+    initAuthCreds,
+    BufferJSON
 } = require("@whiskeysockets/baileys");
+const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const pino = require("pino");
 const path = require('path');
 const { commands } = require('./command');
 const config = require('./config');
 
+// MongoDB Auth State Adapter
+async function useMongoDBAuthState(collection) {
+    const writeData = (data, id) => collection.replaceOne({ _id: id }, JSON.parse(JSON.stringify(data, BufferJSON.replacer)), { upsert: true });
+    const readData = async (id) => {
+        try {
+            const data = await collection.findOne({ _id: id });
+            return data ? JSON.parse(JSON.stringify(data), BufferJSON.reviver) : null;
+        } catch (error) { return null; }
+    };
+    const removeData = async (id) => {
+        try { await collection.deleteOne({ _id: id }); } catch (_a) {}
+    };
+    const creds = await readData('creds') || initAuthCreds();
+    return {
+        state: {
+            creds,
+            keys: {
+                get: async (type, ids) => {
+                    const data = {};
+                    await Promise.all(ids.map(async id => {
+                        let value = await readData(`${type}-${id}`);
+                        if (type === 'app-state-sync-key' && value) {
+                            value = require('@whiskeysockets/baileys').proto.Message.AppStateSyncKeyData.fromObject(value);
+                        }
+                        data[id] = value;
+                    }));
+                    return data;
+                },
+                set: async (data) => {
+                    const tasks = [];
+                    for (const category in data) {
+                        for (const id in data[category]) {
+                            const value = data[category][id];
+                            const key = `${category}-${id}`;
+                            tasks.push(value ? writeData(value, key) : removeData(key));
+                        }
+                    }
+                    await Promise.all(tasks);
+                }
+            }
+        },
+        saveCreds: () => writeData(creds, 'creds')
+    };
+}
+
 async function connectToWA() {
     console.log("🚀 Starting Sew Queen Bot...");
 
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
+    // Connect to MongoDB
+    if (!process.env.MONGODB_URI) {
+        throw new Error("MONGODB_URI environment variable is not defined!");
+    }
+    const mongoClient = new MongoClient(process.env.MONGODB_URI);
+    await mongoClient.connect();
+    const collection = mongoClient.db('whatsapp_bot').collection('auth_info');
+
+    // Load Auth State from MongoDB
+    const { state, saveCreds } = await useMongoDBAuthState(collection);
+    
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
