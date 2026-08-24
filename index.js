@@ -95,7 +95,10 @@ async function connectToWA() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
         },
-        browser: Browsers.macOS("Desktop"),
+        browser: ['Sew Queen Bot', 'Chrome', '1.0.0'],
+        syncFullHistory: false,
+        generateHighQualityLinkPreview: false,
+        markOnlineOnConnect: true
     });
 
     sock.ev.on('connection.update', (update) => {
