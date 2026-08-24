@@ -1,4 +1,8 @@
 require('dotenv').config();
+const express = require('express');
+const app = express();
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(process.env.PORT || 8000, () => console.log('Web server is running to bypass health check'));
 const {
     default: makeWASocket,
     useMultiFileAuthState,
