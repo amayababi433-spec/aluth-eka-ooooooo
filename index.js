@@ -66,16 +66,21 @@ async function useMongoDBAuthState(collection) {
     };
 }
 
+let mongoClient;
+let collection;
+
 async function connectToWA() {
     console.log("🚀 Starting Sew Queen Bot...");
 
-    // Connect to MongoDB
-    if (!process.env.MONGODB_URI) {
-        throw new Error("MONGODB_URI environment variable is not defined!");
+    // Connect to MongoDB only once
+    if (!mongoClient) {
+        if (!process.env.MONGODB_URI) {
+            throw new Error("MONGODB_URI environment variable is not defined!");
+        }
+        mongoClient = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 10 });
+        await mongoClient.connect();
+        collection = mongoClient.db('whatsapp_bot').collection('auth_info');
     }
-    const mongoClient = new MongoClient(process.env.MONGODB_URI);
-    await mongoClient.connect();
-    const collection = mongoClient.db('whatsapp_bot').collection('auth_info');
 
     // Load Auth State from MongoDB
     const { state, saveCreds } = await useMongoDBAuthState(collection);
@@ -102,10 +107,11 @@ async function connectToWA() {
         }
 
         if (connection === 'close') {
-            let shouldReconnect = (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut);
+            let reason = lastDisconnect.error?.output?.statusCode;
+            let shouldReconnect = (reason !== DisconnectReason.loggedOut);
             if (shouldReconnect) {
-                console.log('⚠️ Reconnecting...');
-                connectToWA();
+                console.log(`⚠️ Reconnecting... (Reason: ${reason})`);
+                setTimeout(() => connectToWA(), 3000);
             } else {
                 console.log('❌ Session Logged out. Rescan QR.');
             }
