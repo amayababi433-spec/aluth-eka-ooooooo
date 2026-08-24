@@ -169,7 +169,8 @@ cmd({
     async (conn, mek, m, { from, body, isGroup, sender }) => {
         try {
             // 1. Block Specific User (+94 77 729 7616)
-            if (sender.includes('94777297616')) return;
+            if (sender && typeof sender === 'string' && sender.includes('94777297616')) return;
+
 
             if (!body) return;
 
