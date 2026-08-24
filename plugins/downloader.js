@@ -70,7 +70,7 @@ cmd({
     }
 
   } catch (e) {
-    console.log(e);
-    reply(`❌ System Error: ${e.message}`);
+    console.error('Song/Video Downloader Error:', e.message);
+    reply('❌ සිංදුව හෝ වීඩියෝව බාගත කිරීමේදී දෝෂයක් ඇති විය. කරුණාකර පසුව නැවත උත්සාහ කරන්න.');
   }
 });
