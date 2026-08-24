@@ -38,17 +38,8 @@ cmd({
         `2️⃣ *Google Drive Link (Save Data)* ☁️\n\n` +
         `_Reply 1 or 2_`;
 
-      // 🔥 CRASH GUARD: පින්තූරේ අවුල් ගියොත් Text එක යවනවා
-      try {
-        return await conn.sendMessage(from, {
-          // Imgur Link එකක් දැම්මා (මේක ටිකක් ශේප්)
-          image: { url: "https://i.imgur.com/LyH8M8y.jpeg" },
-          caption: songMenu
-        }, { quoted: mek });
-      } catch (imgErr) {
-        console.log("⚠️ Image Failed, Sending Text Only...");
-        return await conn.sendMessage(from, { text: songMenu }, { quoted: mek });
-      }
+      // පින්තූර අදින්න යන්නේ නැතුව කෙලින්ම Text එක යවමු (BSON සහ 440 Errors මගහරින්න)
+      return await conn.sendMessage(from, { text: songMenu }, { quoted: mek });
     }
 
     // 🅱️ SCENARIO B: VIDEO (Quality Poll) 🎥
@@ -60,14 +51,7 @@ cmd({
       `3️⃣ *Low Quality (Data Saver)*\n\n` +
       `_Reply 1, 2, or 3_`;
 
-    try {
-      return await conn.sendMessage(from, {
-        image: { url: "https://ssl.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png" },
-        caption: videoMenu
-      }, { quoted: mek });
-    } catch (e) {
-      return await conn.sendMessage(from, { text: videoMenu }, { quoted: mek });
-    }
+    return await conn.sendMessage(from, { text: videoMenu }, { quoted: mek });
 
   } catch (e) {
     console.error('Song/Video Downloader Error:', e.message);
