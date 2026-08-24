@@ -21,6 +21,24 @@ const path = require('path');
 const { commands } = require('./command');
 const config = require('./config');
 
+// ⚠️ GLOBAL ERROR CATCHER (BOT එක CRASH වීම වළක්වයි)
+process.on('uncaughtException', (err) => {
+    console.error('💀 CRITICAL UNCAUGHT EXCEPTION:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ UNHANDLED REJECTION AT:', promise, 'REASON:', reason);
+});
+
+// 🔓 MESSAGE SANITIZER (UNDEFINED ERRORS නවත්වයි)
+const getMsgContent = (m) => {
+    const msg = m?.message;
+    if (!msg) return "";
+    return msg.conversation || 
+           msg.extendedTextMessage?.text || 
+           msg.imageMessage?.caption || 
+           msg.videoMessage?.caption || "";
+};
+
 // MongoDB Auth State Adapter
 async function useMongoDBAuthState(collection) {
     const writeData = (data, id) => collection.replaceOne({ _id: id }, JSON.parse(JSON.stringify(data, BufferJSON.replacer)), { upsert: true });
@@ -151,10 +169,9 @@ async function connectToWA() {
             const type = getContentType(mek.message);
             const from = mek.key.remoteJid;
             
-            const body = (type === 'conversation') ? mek.message.conversation : 
-                         (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : 
-                         (type === 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : 
-                         (type === 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : '';
+            const content = getMsgContent(mek);
+            if (!content || typeof content !== 'string') return;
+            const body = content;
 
             const isCmd = body.startsWith('.');
             const command = isCmd ? body.slice(1).trim().split(' ')[0].toLowerCase() : '';
