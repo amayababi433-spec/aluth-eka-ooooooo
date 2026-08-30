@@ -41,11 +41,18 @@ const getMsgContent = (m) => {
 
 // MongoDB Auth State Adapter
 async function useMongoDBAuthState(collection) {
-    const writeData = (data, id) => collection.replaceOne({ _id: id }, JSON.parse(JSON.stringify(data, BufferJSON.replacer)), { upsert: true });
+    const writeData = (data, id) => {
+        const parsed = JSON.parse(JSON.stringify(data, BufferJSON.replacer));
+        const doc = { _id: id, data: parsed };
+        return collection.replaceOne({ _id: id }, doc, { upsert: true });
+    };
     const readData = async (id) => {
         try {
-            const data = await collection.findOne({ _id: id });
-            return data ? JSON.parse(JSON.stringify(data), BufferJSON.reviver) : null;
+            const doc = await collection.findOne({ _id: id });
+            if (!doc) return null;
+            const parsed = doc.data !== undefined ? doc.data : doc;
+            if (parsed._id) delete parsed._id;
+            return JSON.parse(JSON.stringify(parsed), BufferJSON.reviver);
         } catch (error) { return null; }
     };
     const removeData = async (id) => {
