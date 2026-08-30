@@ -179,6 +179,7 @@ async function connectToWA() {
             const q = args.join(' ');
             const isOwner = config.OWNER_NUMBER.includes(mek.key.participant || mek.key.remoteJid);
             const sender = mek.key.participant || mek.key.remoteJid;
+            const isGroup = from.endsWith('@g.us');
 
             const reply = (text) => {
                 sock.sendMessage(from, { text: text }, { quoted: mek });
@@ -188,7 +189,7 @@ async function connectToWA() {
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));
                 if (cmd) {
-                    await cmd.function(sock, mek, m, { from, q, reply, args, isOwner, body, sender });
+                    await cmd.function(sock, mek, m, { from, q, reply, args, isOwner, isGroup, body, sender });
                 }
             }
 
@@ -196,7 +197,7 @@ async function connectToWA() {
             commands.map(async (command) => {
                 if (command.on === "body") {
                     try {
-                        await command.function(sock, mek, m, { from, body, isOwner, reply, sender });
+                        await command.function(sock, mek, m, { from, body, isOwner, isGroup, reply, sender });
                     } catch(err) { console.log('Plugin Body Error:', err); }
                 }
             });

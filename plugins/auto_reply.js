@@ -1,0 +1,91 @@
+﻿const { cmd } = require('../command');
+const axios = require('axios');
+
+// Node.js Gemini API Keys with rotation
+const ENCODED_KEYS = [
+    "QVEuQWI4Uk42TDNhOTVxeUd1YU5fWGpLQUk0XzRCT2hmdU9XeVB4eUpGQXotN0JjMjJuSHc=",
+    "QVEuQWI4Uk42SmpkZGRHRFVockRxYXhuWWhabGZBOXBuMmRKZnBEWWJaVWI3dkJhSzN5TXc=",
+    "QVEuQWI4Uk42S1NZRFpRc2dxSHNfV2k3akwzazZnREwxNXBmYWdNTHUtclBhcU9jZE9WR0E=",
+    "QVEuQWI4Uk42S3V1cm8yMTRmTmwxRXIwd3pfMzNNVXgyLS1ucDQ1b2hJbFB3VHVZSExoMVE=",
+    "QVEuQWI4Uk42SU9fYTB6ODJZZGYwNjhoUExYZUhUV2pkZC01WFZyYVFReW5Ic1Rrd2ZtVWc=",
+    "QVEuQWI4Uk42TDhla1JIdUpCa0FjcFVLSFgtTjA3VXdMcXFDbFJTX3ZUWUNtaWEtTXhKblE="
+];
+
+const GEMINI_KEYS = process.env.GEMINI_KEYS 
+    ? process.env.GEMINI_KEYS.split(',').map(k => k.trim()).filter(Boolean)
+    : ENCODED_KEYS.map(k => Buffer.from(k, 'base64').toString('utf8'));
+
+// පෞද්ගලික / Class සම්බන්ධ වචන
+const personalWords = ['clz', 'class', 'enawada', 'yanawada', 'bus', 'kiye', 'heta', 'ada'];
+
+// Models to query
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-pro'];
+
+cmd({
+    on: "body"
+}, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {
+    try {
+        // Group මැසේජ්, Commands, Bot ගේම මැසේජ් සහ Owner ගේ මැසේජ් මඟ හැරීම
+        if (!body || typeof body !== 'string') return;
+        if (isGroup || from?.endsWith('@g.us') || isOwner || mek?.key?.fromMe) return;
+        if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
+
+        const text = body.toLowerCase().trim();
+        if (!text) return;
+        
+        // මැසේජ් එක Auto-Read කිරීම (Blue Tick)
+        try {
+            if (conn && typeof conn.readMessages === 'function') {
+                await conn.readMessages([mek.key]);
+            }
+        } catch (_) {}
+
+        // පෞද්ගලික වචන තියෙනවද කියලා check කිරීම
+        const isPersonal = personalWords.some(word => text.includes(word));
+
+        if (isPersonal) {
+            return await reply("⚠️ *කරුණාකර රැඳී සිටින්න.* \n\nමෙය පෞද්ගලික/පන්ති සම්බන්ධ පණිවිඩයක් බැවින් Owner පැමිණි පසු ඔබට පිළිතුරු ලබා දෙනු ඇත.");
+        }
+
+        // ටයිපින් මිස්ටේක් තේරුම් ගන්න දෙන System Prompt එක
+        const aiPrompt = `You are a human-like WhatsApp friend responding in Sinhala or Singlish. The user might send messages with spelling mistakes, broken Singlish, or half-complete words. Understand their true intent, ignore the typos, and reply naturally like a real friendly person in casual Sinhala. Keep the response concise and helpful. User message: ${body}`;
+        
+        let aiReply = null;
+
+        // Auto Key Rotation Logic (එකක් fail වුණොත් ඊළඟ key එකට යයි)
+        for (let i = 0; i < GEMINI_KEYS.length; i++) {
+            const currentKey = GEMINI_KEYS[i];
+            
+            for (const model of GEMINI_MODELS) {
+                try {
+                    const res = await axios.post(
+                        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
+                        {
+                            contents: [{ parts: [{ text: aiPrompt }] }]
+                        },
+                        { timeout: 12000 }
+                    );
+
+                    aiReply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (aiReply) break;
+                } catch (err) {
+                    const status = err?.response?.status || err?.message;
+                    console.log(`[AutoReply] Key ${i + 1} (${model}) status: ${status}`);
+                    if (status === 429) {
+                        break; // Move to next key
+                    }
+                }
+            }
+
+            if (aiReply) break;
+        }
+
+        // අවසානයේ උත්තරේ යැවීම
+        if (aiReply) {
+            return await reply(`🤖 ${aiReply.trim()}`);
+        }
+
+    } catch (e) {
+        console.error("Auto AI Error:", e.message);
+    }
+});
