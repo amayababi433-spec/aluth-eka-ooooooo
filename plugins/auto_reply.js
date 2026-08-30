@@ -1,4 +1,4 @@
-﻿const { cmd } = require('../command');
+const { cmd } = require('../command');
 const axios = require('axios');
 
 // Node.js Gemini API Keys with rotation
@@ -53,7 +53,7 @@ cmd({
         const isPersonal = personalWords.some(word => text.includes(word));
 
         if (isPersonal) {
-            return await reply("⚠️ *කරුණාකර රැඳී සිටින්න.* \n\nමෙය පෞද්ගලික/පන්ති සම්බන්ධ පණිවිඩයක් බැවින් Owner පැමිණි පසු ඔබට පිළිතුරු ලබා දෙනු ඇත.");
+            return await reply("⚠️ *කරුණාකර රැඳී සිටින්න.* \n\nOwner පැමිණි පසු ඔබට පිළිතුරු ලබා දෙනු ඇත.");
         }
 
         // ටයිපින් මිස්ටේක් තේරුම් ගන්න දෙන System Prompt එක
