@@ -4,10 +4,10 @@ const axios = require('axios');
 // Node.js Gemini API Keys with rotation
 const ENCODED_KEYS = [
     "QVEuQWI4Uk42TDNhOTVxeUd1YU5fWGpLQUk0XzRCT2hmdU9XeVB4eUpGQXotN0JjMjJuSHc=",
-    "QVEuQWI4Uk42SmpkZGRHRFVockRxYXhuWWhabGZBOXBuMmRKZnBEWWJaVWI3dkJhSzN5TXc=",
+    "QVEuQWI4Uk42SmpkZGRHRFVockRxYXhuWWhabGZBOWJuMmRKZnBEWWJaVWI3dkJhSzN5TXc=",
     "QVEuQWI4Uk42S1NZRFpRc2dxSHNfV2k3akwzazZnREwxNXBmYWdNTHUtclBhcU9jZE9WR0E=",
-    "QVEuQWI4Uk42S3V1cm8yMTRmTmwxRXIwd3pfMzNNVXgyLS1ucDQ1b2hJbFB3VHVZSExoMVE=",
-    "QVEuQWI4Uk42SU9fYTB6ODJZZGYwNjhoUExYZUhUV2pkZC01WFZyYVFReW5Ic1Rrd2ZtVWc=",
+    "QVEuQWI4Uk42S3V1cm8yMTRmTmwxRXIwd3pfMzNNVXgyLS1ucDQ1b2hJbFB3VHVaSExoMVE=",
+    "QVEuQWI4Uk42SU9fYTB6ODJZZGYwNjhoUExYZUhUV2pkZC01WFZyYVFRdm5Ic1Rrd2ZtVWc=",
     "QVEuQWI4Uk42TDhla1JIdUpCa0FjcFVLSFgtTjA3VXdMcXFDbFJTX3ZUWUNtaWEtTXhKblE="
 ];
 
@@ -18,21 +18,30 @@ const GEMINI_KEYS = process.env.GEMINI_KEYS
 // පෞද්ගලික / Class සම්බන්ධ වචන
 const personalWords = ['clz', 'class', 'enawada', 'yanawada', 'bus', 'kiye', 'heta', 'ada'];
 
-// Models to query
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-pro'];
+// Models to query (Google API strict requirement fallbacks)
+const GEMINI_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-pro'];
 
 cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {
     try {
-        // Group මැසේජ්, Commands, Bot ගේම මැසේජ් සහ Owner ගේ මැසේජ් මඟ හැරීම
         if (!body || typeof body !== 'string') return;
-        if (isGroup || from?.endsWith('@g.us') || isOwner || mek?.key?.fromMe) return;
+        
+        // Group මැසේජ්, Commands, Bot ගේම මැසේජ් මඟ හැරීම
+        if (isGroup || from?.endsWith('@g.us') || mek?.key?.fromMe) return;
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
+
+        // Owner check: අයිතිකාරයාට auto-reply යවන්නේ නෑ, හැබැයි test කරනවා නම් log එකේ පෙන්නනවා
+        if (isOwner) {
+            console.log(`[AutoReply] Ignored owner message from: ${from}`);
+            return;
+        }
 
         const text = body.toLowerCase().trim();
         if (!text) return;
         
+        console.log(`[AutoReply] Processing AI reply for: ${from}`);
+
         // මැසේජ් එක Auto-Read කිරීම (Blue Tick)
         try {
             if (conn && typeof conn.readMessages === 'function') {
@@ -52,7 +61,7 @@ cmd({
         
         let aiReply = null;
 
-        // Auto Key Rotation Logic (එකක් fail වුණොත් ඊළඟ key එකට යයි)
+        // Auto Key Rotation Logic
         for (let i = 0; i < GEMINI_KEYS.length; i++) {
             const currentKey = GEMINI_KEYS[i];
             
@@ -72,7 +81,7 @@ cmd({
                     const status = err?.response?.status || err?.message;
                     console.log(`[AutoReply] Key ${i + 1} (${model}) status: ${status}`);
                     if (status === 429) {
-                        break; // Move to next key
+                        break; // Rate limit hit on this key, move to next key immediately
                     }
                 }
             }
@@ -80,9 +89,11 @@ cmd({
             if (aiReply) break;
         }
 
-        // අවසානයේ උත්තරේ යැවීම
         if (aiReply) {
+            console.log(`[AutoReply] Sent reply to ${from}`);
             return await reply(`🤖 ${aiReply.trim()}`);
+        } else {
+            console.log(`[AutoReply] Failed to get response from all keys.`);
         }
 
     } catch (e) {
