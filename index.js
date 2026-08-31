@@ -246,7 +246,12 @@ async function connectToWA() {
                         try {
                             if (voterJid && voterJid.includes('@lid') && sock.signalRepository?.lidMapping?.getPNForLID) {
                                 realPn = await sock.signalRepository.lidMapping.getPNForLID(voterJid);
+                                
                                 console.log("[POLL DEBUG] Found Real PN for LID:", realPn);
+                            } else {
+                                console.log("[POLL DEBUG] getPNForLID returned null or missing for", voterJid);
+                            }
+
                             }
                         } catch(e) {}
                         
