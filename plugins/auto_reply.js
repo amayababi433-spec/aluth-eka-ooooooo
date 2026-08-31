@@ -1,7 +1,8 @@
-const { cmd } = require('../command');
+﻿const { cmd } = require('../command');
 const axios = require('axios');
+const { MongoClient } = require('mongodb');
 
-// Node.js Gemini API Keys with rotation
+// Node.js Gemini API Keys with rotation (Base64 Encoded for GitHub Security)
 const ENCODED_KEYS = [
     "QVEuQWI4Uk42TDNhOTVxeUd1YU5fWGpLQUk0XzRCT2hmdU9XeVB4eUpGQXotN0JjMjJuSHc=",
     "QVEuQWI4Uk42SmpkZGRHRFVockRxYXhuWWhabGZBOWJuMmRKZnBEWWJaVWI3dkJhSzN5TXc=",
@@ -21,6 +22,24 @@ const personalWords = ['clz', 'class', 'enawada', 'yanawada', 'bus', 'kiye', 'he
 // Models to query (Google API strict requirement fallbacks)
 const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-pro'];
 
+let pollCollection;
+const userCache = new Map(); // RAM Cache
+const spamGuard = new Map(); // Anti-Spam Map
+
+// Database Connection
+async function getDB() {
+    if (!pollCollection) {
+        if (!process.env.MONGODB_URI) {
+            console.error("No MONGODB_URI found for auto_reply poll cache.");
+            return null;
+        }
+        const client = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 10 });
+        await client.connect();
+        pollCollection = client.db('whatsapp_bot').collection('poll_state');
+    }
+    return pollCollection;
+}
+
 cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {
@@ -37,10 +56,16 @@ cmd({
             return;
         }
 
-        const text = body.toLowerCase().trim();
-        if (!text) return;
-        
-        console.log(`[AutoReply] Processing AI reply for: ${from}`);
+        const sender = mek.key.participant || mek.key.remoteJid || from;
+        const text = body.trim();
+        const lowerText = text.toLowerCase();
+        const today = new Date().toDateString();
+        const now = Date.now();
+
+        // 🔥 1. ANTI-SPAM GUARD: තත්පර 3කට වඩා අඩුවෙන් මැසේජ් ආවොත් Ignore කරනවා (Crash වෙන්නේ නෑ)
+        const lastMsgTime = spamGuard.get(sender) || 0;
+        if (now - lastMsgTime < 3000) return; 
+        spamGuard.set(sender, now);
 
         // මැසේජ් එක Auto-Read කිරීම (Blue Tick)
         try {
@@ -49,51 +74,103 @@ cmd({
             }
         } catch (_) {}
 
-        // පෞද්ගලික වචන තියෙනවද කියලා check කිරීම
-        const isPersonal = personalWords.some(word => text.includes(word));
+        const db = await getDB();
+        if (!db) return; // DB නැත්නම් නවතින්න
+        
+        // 🔥 2. HYBRID CACHE: RAM එකෙන් මුලින්ම බලනවා
+        let userData = userCache.get(sender);
 
-        if (isPersonal) {
-            return await reply("⚠️ *කරුණාකර රැඳී සිටින්න.* \n\nOwner පැමිණි පසු ඔබට පිළිතුරු ලබා දෙනු ඇත.");
+        if (!userData) {
+            userData = await db.findOne({ _id: sender });
+            if (userData) userCache.set(sender, userData);
         }
 
-        // ටයිපින් මිස්ටේක් තේරුම් ගන්න දෙන System Prompt එක
-        const aiPrompt = `You are a human-like WhatsApp friend responding in Sinhala or Singlish. The user might send messages with spelling mistakes, broken Singlish, or half-complete words. Understand their true intent, ignore the typos, and reply naturally like a real friendly person in casual Sinhala. Keep the response concise and helpful. User message: ${body}`;
-        
-        let aiReply = null;
+        // 3. Reset Command
+        if (text === '0') {
+            userCache.delete(sender);
+            // 🔥 Non-blocking DB write (await නෑ, ඒ නිසා Bot හිරවෙන්නේ නෑ)
+            db.deleteOne({ _id: sender }).catch(() => {}); 
+            return await reply("🔄 *Reset Successful.* ඊළඟ මැසේජ් එකේදී නැවත Poll එක පැමිණේවි.");
+        }
 
-        // Auto Key Rotation Logic
-        for (let i = 0; i < GEMINI_KEYS.length; i++) {
-            const currentKey = GEMINI_KEYS[i];
+        // 4. New User / Next Day Check
+        if (!userData || userData.lastSeen !== today) {
+            const newState = { lastSeen: today, state: 'WAITING_FOR_VOTE' };
+            userCache.set(sender, newState); 
+            // Non-blocking DB write
+            db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
             
-            for (const model of GEMINI_MODELS) {
-                try {
-                    const res = await axios.post(
-                        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
-                        {
-                            contents: [{ parts: [{ text: aiPrompt }] }]
-                        },
-                        { timeout: 12000 }
-                    );
+            const pollMsg = `📊 *DMC Verification Poll* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n1️⃣ Real Human 👦\n2️⃣ AI Bot 🤖\n\n_(කරුණාකර 1 හෝ 2 Reply කරන්න)_`;
+            return await reply(pollMsg);
+        }
 
-                    aiReply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (aiReply) break;
-                } catch (err) {
-                    const status = err?.response?.status || err?.message;
-                    console.log(`[AutoReply] Key ${i + 1} (${model}) status: ${status}`);
-                    if (status === 429) {
-                        break; // Rate limit hit on this key, move to next key immediately
+        const state = userData.state;
+
+        // 5. Voting Logic
+        if (state === 'WAITING_FOR_VOTE') {
+            if (text === '1') {
+                userData.state = 'REAL';
+                db.updateOne({ _id: sender }, { $set: { state: 'REAL' } }).catch(() => {});
+                return await reply("✅ *Verification Success!* Owner පැමිණි පසු පිළිතුරු දෙනු ඇත.");
+            } else if (text === '2') {
+                userData.state = 'BOT';
+                db.updateOne({ _id: sender }, { $set: { state: 'BOT' } }).catch(() => {});
+                return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
+            } else {
+                return await reply("⚠️ කරුණාකර 1 හෝ 2 පමණක් Reply කරන්න.");
+            }
+        }
+
+        // 6. Block AI for Real Users (but keep personalWords logic if needed)
+        if (state === 'REAL') {
+            // පෞද්ගලික වචන තියෙනවද කියලා check කිරීම
+            const isPersonal = personalWords.some(word => lowerText.includes(word));
+            if (isPersonal) {
+                return await reply("⚠️ *කරුණාකර රැඳී සිටින්න.* \n\nOwner පැමිණි පසු ඔබට පිළිතුරු ලබා දෙනු ඇත.");
+            }
+            return;
+        }
+
+        // 7. Gemini AI Generation with Auto-Fallback (Old robust logic)
+        if (state === 'BOT') {
+            const aiPrompt = `You are a human-like WhatsApp friend responding in Sinhala or Singlish. The user might send messages with spelling mistakes, broken Singlish, or half-complete words. Understand their true intent, ignore the typos, and reply naturally like a real friendly person in casual Sinhala. Keep the response concise and helpful. User message: ${body}`;
+            let aiReply = null;
+
+            console.log(`[AutoReply] Processing AI reply for: ${from}`);
+
+            for (let i = 0; i < GEMINI_KEYS.length; i++) {
+                const currentKey = GEMINI_KEYS[i];
+                
+                for (const model of GEMINI_MODELS) {
+                    try {
+                        const res = await axios.post(
+                            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`,
+                            {
+                                contents: [{ parts: [{ text: aiPrompt }] }]
+                            },
+                            { timeout: 12000 }
+                        );
+
+                        aiReply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (aiReply) break;
+                    } catch (err) {
+                        const status = err?.response?.status || err?.message;
+                        console.log(`[AutoReply] Key ${i + 1} (${model}) status: ${status}`);
+                        if (status === 429) {
+                            break; // Rate limit hit on this key, move to next key
+                        }
                     }
                 }
+
+                if (aiReply) break;
             }
 
-            if (aiReply) break;
-        }
-
-        if (aiReply) {
-            console.log(`[AutoReply] Sent reply to ${from}`);
-            return await reply(`🤖 ${aiReply.trim()}`);
-        } else {
-            console.log(`[AutoReply] Failed to get response from all keys.`);
+            if (aiReply) {
+                console.log(`[AutoReply] Sent reply to ${from}`);
+                return await reply(`🤖 ${aiReply.trim()}`);
+            } else {
+                console.log(`[AutoReply] Failed to get response from all keys.`);
+            }
         }
 
     } catch (e) {
