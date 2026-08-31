@@ -239,7 +239,16 @@ async function connectToWA() {
                         
                         const voterJid = getKeyAuthor(mek.key, meIdNormalised);
 
-                        const pollEncKey = pollMsgInfo.message.messageContextInfo.messageSecret;
+                        const pollEncKey = pollMsgInfo.message.messageContextInfo?.messageSecret;
+console.log("[POLL DEBUG] DUMP:", {
+    pollCreatorJid,
+    pollMsgId: creationMsgKey.id,
+    voterJid,
+    pollEncKeyType: typeof pollEncKey,
+    pollEncKeyLength: pollEncKey ? pollEncKey.length : 0,
+    isBuffer: Buffer.isBuffer(pollEncKey),
+    isUint8Array: pollEncKey instanceof Uint8Array
+});
                         
                         let voteMsg;
                                                 let realPn = null;
