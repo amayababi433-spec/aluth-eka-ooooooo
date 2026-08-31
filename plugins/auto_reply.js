@@ -1,4 +1,4 @@
-﻿const { cmd } = require('../command');
+const { cmd } = require('../command');
 const axios = require('axios');
 const { MongoClient } = require('mongodb');
 
@@ -100,7 +100,7 @@ cmd({
             // Non-blocking DB write
             db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
             
-            const pollMsg = `📊 *DMC Verification Poll* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n1️⃣ Real Human 👦\n2️⃣ AI Bot 🤖\n\n_(කරුණාකර 1 හෝ 2 Reply කරන්න)_`;
+            const pollMsg = `📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n1️⃣ Real Human 👦\n2️⃣ AI Bot 🤖\n0️⃣ Reset State 🔄\n\n_(කරුණාකර 1, 2 හෝ 0 Reply කරන්න)_`;
             return await reply(pollMsg);
         }
 
@@ -117,7 +117,7 @@ cmd({
                 db.updateOne({ _id: sender }, { $set: { state: 'BOT' } }).catch(() => {});
                 return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
             } else {
-                return await reply("⚠️ කරුණාකර 1 හෝ 2 පමණක් Reply කරන්න.");
+                return await reply("⚠️ කරුණාකර 1, 2 හෝ 0 පමණක් Reply කරන්න.");
             }
         }
 
