@@ -128,27 +128,34 @@ cmd({
             userCache.set(sender, newState); 
             db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
             
-            const menuText = "📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n*0* - RESET 🔄\n*1* - Real Human 👦\n*2* - BOT 🤖\n\n_කරුණාකර අංකය පමණක් Reply කරන්න (උදා: 2)_";
-            await conn.sendMessage(from, { text: menuText });
-            return;
+            const pollMsg = {
+                poll: {
+                    name: "📊 DMC Verification Poll 📊\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?",
+                    values: ["0.RESET 🔄", "1.Real Human 👦", "2.BOT 🤖"],
+                    selectableCount: 1
+                }
+            };
+            const sentMsg = await conn.sendMessage(from, pollMsg);
+            if (global.activePolls) global.activePolls.set(sentMsg.key.id, sentMsg);
+            return sentMsg;
         }
 
         const state = userData.state;
 
+        
         if (state === 'WAITING_FOR_VOTE') {
-            if (text === '1' || text.toLowerCase().includes('real human')) {
-                if (global.processPollVote) await global.processPollVote(sender, '1.Real Human', conn);
-                return;
-            } else if (text === '2' || text.toLowerCase().includes('bot')) {
-                if (global.processPollVote) await global.processPollVote(sender, '2.BOT', conn);
-                return;
-            }
-            
             console.log(`[DEBUG] User is in WAITING_FOR_VOTE. Resending poll...`);
 
-            const menuText = "📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n*0* - RESET 🔄\n*1* - Real Human 👦\n*2* - BOT 🤖\n\n_කරුණාකර අංකය පමණක් Reply කරන්න (උදා: 2)_";
-            await conn.sendMessage(from, { text: menuText });
-            return;
+            const pollMsg = {
+                poll: {
+                    name: "📊 DMC Verification Poll 📊\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?",
+                    values: ["0.RESET 🔄", "1.Real Human 👦", "2.BOT 🤖"],
+                    selectableCount: 1
+                }
+            };
+            const sentMsg = await conn.sendMessage(from, pollMsg);
+            if (global.activePolls) global.activePolls.set(sentMsg.key.id, sentMsg);
+            return sentMsg;
         }
 
         // 6. Block AI for Real Users (but keep personalWords logic)
