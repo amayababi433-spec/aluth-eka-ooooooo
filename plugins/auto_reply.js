@@ -1,4 +1,4 @@
-﻿const { cmd } = require('../command');
+const { cmd } = require('../command');
 const axios = require('axios');
 const { MongoClient } = require('mongodb');
 
@@ -125,7 +125,7 @@ cmd({
             const pollMsg = {
                 poll: {
                     name: "📊 DMC Verification Poll 📊\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?",
-                    values: ["0.RESET 📊", "1.Real Human", "2.BOT"],
+                    values: ["0.RESET 🔄", "1.Real Human 👦", "2.BOT 🤖"],
                     selectableCount: 1
                 }
             };
@@ -134,7 +134,16 @@ cmd({
 
         const state = userData.state;
 
-        if (state === 'WAITING_FOR_VOTE') return; // Ignore text if they haven't voted
+        if (state === 'WAITING_FOR_VOTE') {
+            const pollMsg = {
+                poll: {
+                    name: "📊 DMC Verification Poll 📊\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?",
+                    values: ["0.RESET 🔄", "1.Real Human 👦", "2.BOT 🤖"],
+                    selectableCount: 1
+                }
+            };
+            return await conn.sendMessage(from, pollMsg);
+        }
 
         // 6. Block AI for Real Users (but keep personalWords logic)
         if (state === 'REAL') {
