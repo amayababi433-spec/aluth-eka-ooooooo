@@ -241,15 +241,29 @@ async function connectToWA() {
 
                         const pollEncKey = pollMsgInfo.message.messageContextInfo.messageSecret;
                         
-                        const voteMsg = decryptPollVote(
-                            mek.message.pollUpdateMessage.vote,
-                            {
-                                pollEncKey,
-                                pollCreatorJid,
-                                pollMsgId: creationMsgKey.id,
-                                voterJid
+                        let voteMsg;
+                        const possibleVoters = [voterJid, voterJid.replace('@lid', '@s.whatsapp.net'), voterJid.replace('@lid', '@c.us'), mek.key.remoteJid, mek.key.participant].filter(Boolean);
+                        const possibleCreators = [pollCreatorJid, pollCreatorJid.replace('@s.whatsapp.net', '@lid'), pollCreatorJid.replace('@s.whatsapp.net', '@c.us')];
+                        
+                        let decrypted = false;
+                        for (const cJid of possibleCreators) {
+                            for (const vJid of possibleVoters) {
+                                try {
+                                    voteMsg = decryptPollVote(
+                                        mek.message.pollUpdateMessage.vote,
+                                        { pollEncKey, pollCreatorJid: cJid, pollMsgId: creationMsgKey.id, voterJid: vJid }
+                                    );
+                                    decrypted = true;
+                                    console.log("[POLL DEBUG] Successfully decrypted with creator:", cJid, "voter:", vJid);
+                                    break;
+                                } catch(e) {}
                             }
-                        );
+                            if (decrypted) break;
+                        }
+                        
+                        if (!decrypted) {
+                            throw new Error("All decryption attempts failed");
+                        }
                         console.log("[POLL DEBUG] Decrypted Vote:", JSON.stringify(voteMsg));
                         
                         const voteAggregate = getAggregateVotesInPollMessage({
