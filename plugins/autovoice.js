@@ -174,11 +174,8 @@ cmd({
 
             if (!body) return;
 
-            // 2. Group Filtering Logic (DISABLED)
-            // if (isGroup) {
-            //    // Restriction removed to check if files are working
-            // }
-            // ගෲප් එකක් නොවේ නම් (Private Chat), කෙලින්ම පහළට යයි (Auto Voice වැඩ කරයි)
+            // 2. Group Filtering Logic (Enabled: Only Inbox)
+            if (isGroup) return;
 
             // Anti-Spam Check
             if (!canReply(from)) return;
