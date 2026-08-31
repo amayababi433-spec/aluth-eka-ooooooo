@@ -1,4 +1,4 @@
-const { cmd } = require('../command');
+﻿const { cmd } = require('../command');
 const axios = require('axios');
 const { MongoClient } = require('mongodb');
 
@@ -129,7 +129,9 @@ cmd({
                     selectableCount: 1
                 }
             };
-            return await conn.sendMessage(from, pollMsg);
+            const sentMsg = await conn.sendMessage(from, pollMsg);
+            if (global.activePolls) global.activePolls.set(sentMsg.key.id, sentMsg);
+            return sentMsg;
         }
 
         const state = userData.state;
@@ -142,7 +144,9 @@ cmd({
                     selectableCount: 1
                 }
             };
-            return await conn.sendMessage(from, pollMsg);
+            const sentMsg = await conn.sendMessage(from, pollMsg);
+            if (global.activePolls) global.activePolls.set(sentMsg.key.id, sentMsg);
+            return sentMsg;
         }
 
         // 6. Block AI for Real Users (but keep personalWords logic)

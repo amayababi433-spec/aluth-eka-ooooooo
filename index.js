@@ -13,7 +13,6 @@ const {
     getContentType,
     initAuthCreds,
     BufferJSON,
-    makeInMemoryStore,
     getAggregateVotesInPollMessage
 } = require("@whiskeysockets/baileys");
 const { MongoClient } = require('mongodb');
@@ -21,11 +20,6 @@ const fs = require('fs');
 const pino = require("pino");
 const path = require('path');
 const config = require('./config');
-
-const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
-setInterval(() => {
-    if (store && store.messages) store.messages.clear(); // Free up RAM every 30 mins
-}, 1800000);
 
 const commands = require('./command').commands;
 
@@ -37,7 +31,6 @@ const getMsgContent = (msg) => {
            msg.videoMessage?.caption || "";
 };
 
-// MongoDB Auth State Adapter
 async function useMongoDBAuthState(collection) {
     const writeData = (data, id) => {
         const parsed = JSON.parse(JSON.stringify(data, BufferJSON.replacer));
@@ -95,6 +88,11 @@ let collection;
 const voteCooldown = new Map();
 setInterval(() => voteCooldown.clear(), 3600000);
 
+// Global custom poll cache to avoid huge RAM leaks of InMemoryStore
+global.activePolls = new Map();
+// Clear old polls every hour to prevent memory leaks
+setInterval(() => global.activePolls.clear(), 3600000);
+
 async function connectToWA() {
     console.log("🚀 Starting Sew Queen Bot...");
 
@@ -123,8 +121,6 @@ async function connectToWA() {
         generateHighQualityLinkPreview: false,
         markOnlineOnConnect: true
     });
-
-    store.bind(sock.ev);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -176,8 +172,8 @@ async function connectToWA() {
                 voteCooldown.set(sender, Date.now());
 
                 try {
-                    const pollMsg = await store.loadMessage(sender, msg.key.id);
-                    if (!pollMsg) continue;
+                    const pollMsg = global.activePolls.get(msg.key.id);
+                    if (!pollMsg) continue; // Ignore if we didn't cache the poll
 
                     const vote = getAggregateVotesInPollMessage({
                         message: pollMsg.message,
