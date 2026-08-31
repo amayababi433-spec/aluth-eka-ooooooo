@@ -23,7 +23,8 @@ const config = require('./config');
 
 const commands = require('./command').commands;
 
-const getMsgContent = (msg) => {
+const getMsgContent = (m) => {
+    const msg = m?.message;
     if (!msg) return "";
     return msg.conversation || 
            msg.extendedTextMessage?.text || 
