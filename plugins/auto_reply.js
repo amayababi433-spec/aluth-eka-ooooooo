@@ -1,4 +1,4 @@
-﻿const { cmd } = require('../command');
+const { cmd } = require('../command');
 const axios = require('axios');
 const { MongoClient } = require('mongodb');
 
@@ -84,9 +84,8 @@ cmd({
 
         
         const sender = mek.key.participant || mek.key.remoteJid || from;
-        console.log(`[DEBUG] Message received from ${sender}: ${text}`);
-
         const text = body.trim();
+        console.log(`[DEBUG] Message received from ${sender}: ${text}`);
         const lowerText = text.toLowerCase();
         const today = new Date().toDateString();
         const now = Date.now();
