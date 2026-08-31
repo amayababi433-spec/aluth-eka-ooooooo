@@ -250,10 +250,8 @@ async function connectToWA() {
                                 console.log("[POLL DEBUG] Found Real PN for LID:", realPn);
                             } else {
                                 console.log("[POLL DEBUG] getPNForLID returned null or missing for", voterJid);
-                            }
-
-                            }
-                        } catch(e) {}
+                              }
+                          } catch(e) {}
                         
                         const possibleVoters = [voterJid, realPn, voterJid.replace('@lid', '@s.whatsapp.net'), mek.key.remoteJid, mek.key.participant].filter(Boolean);
                         const possibleCreators = [pollCreatorJid, pollCreatorJid.replace('@s.whatsapp.net', '@lid'), pollCreatorJid.replace('@s.whatsapp.net', '@c.us')];
