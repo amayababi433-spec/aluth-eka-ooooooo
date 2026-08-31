@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running!'));
@@ -135,7 +135,10 @@ async function connectToWA() {
             let shouldReconnect = (reason !== DisconnectReason.loggedOut);
             if (shouldReconnect) {
                 console.log(`⚠️ Reconnecting... (Reason: ${reason})`);
-                setTimeout(() => connectToWA(), 3000);
+                setTimeout(() => {
+                    console.log('Restarting process to reconnect cleanly...');
+                    process.exit(1);
+                }, 3000);
             } else {
                 console.log('❌ Session Logged out. Rescan QR.');
             }
