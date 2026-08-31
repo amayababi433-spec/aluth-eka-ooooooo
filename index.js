@@ -242,7 +242,15 @@ async function connectToWA() {
                         const pollEncKey = pollMsgInfo.message.messageContextInfo.messageSecret;
                         
                         let voteMsg;
-                        const possibleVoters = [voterJid, voterJid.replace('@lid', '@s.whatsapp.net'), voterJid.replace('@lid', '@c.us'), mek.key.remoteJid, mek.key.participant].filter(Boolean);
+                                                let realPn = null;
+                        try {
+                            if (voterJid && voterJid.includes('@lid') && sock.signalRepository?.lidMapping?.getPNForLID) {
+                                realPn = await sock.signalRepository.lidMapping.getPNForLID(voterJid);
+                                console.log("[POLL DEBUG] Found Real PN for LID:", realPn);
+                            }
+                        } catch(e) {}
+                        
+                        const possibleVoters = [voterJid, realPn, voterJid.replace('@lid', '@s.whatsapp.net'), mek.key.remoteJid, mek.key.participant].filter(Boolean);
                         const possibleCreators = [pollCreatorJid, pollCreatorJid.replace('@s.whatsapp.net', '@lid'), pollCreatorJid.replace('@s.whatsapp.net', '@c.us')];
                         
                         let decrypted = false;
