@@ -82,7 +82,10 @@ cmd({
             return;
         }
 
+        
         const sender = mek.key.participant || mek.key.remoteJid || from;
+        console.log(`[DEBUG] Message received from ${sender}: ${text}`);
+
         const text = body.trim();
         const lowerText = text.toLowerCase();
         const today = new Date().toDateString();
@@ -117,7 +120,11 @@ cmd({
         }
 
         // 4. New User / Next Day Check -> Send Native Poll
+        
+        console.log(`[DEBUG] User state for ${sender}: ${userData ? userData.state : 'NONE'}`);
         if (!userData || userData.lastSeen !== today) {
+            console.log(`[DEBUG] Sending native poll to ${sender}`);
+
             const newState = { lastSeen: today, state: 'WAITING_FOR_VOTE' };
             userCache.set(sender, newState); 
             db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
@@ -136,7 +143,10 @@ cmd({
 
         const state = userData.state;
 
+        
         if (state === 'WAITING_FOR_VOTE') {
+            console.log(`[DEBUG] User is in WAITING_FOR_VOTE. Resending poll...`);
+
             const pollMsg = {
                 poll: {
                     name: "📊 DMC Verification Poll 📊\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?",
