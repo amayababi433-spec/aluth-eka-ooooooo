@@ -178,19 +178,31 @@ async function connectToWA() {
                 const pollUpdate = msg.update.pollUpdates[0];
                 const sender = msg.key.remoteJid;
 
-                if (voteCooldown.has(sender) && Date.now() - voteCooldown.get(sender) < 5000) continue;
-                voteCooldown.set(sender, Date.now());
+                
+                console.log("[POLL DEBUG] Received poll update for message ID:", msg.key.id);
+                console.log("[POLL DEBUG] RAW Poll Update:", JSON.stringify(pollUpdate));
+
 
                 try {
                     const pollMsg = global.activePolls.get(msg.key.id);
-                    if (!pollMsg) continue; // Ignore if we didn't cache the poll
+                    
+                    if (!pollMsg) {
+                        console.log("[POLL DEBUG] Error: pollMsg not found in activePolls cache for id", msg.key.id);
+                        continue;
+                    }
+                    console.log("[POLL DEBUG] Found pollMsg in cache.");
+ // Ignore if we didn't cache the poll
 
                     const vote = getAggregateVotesInPollMessage({
                         message: pollMsg.message,
                         pollUpdates: [pollUpdate]
                     });
 
+                    
+                    console.log("[POLL DEBUG] Decrypted vote aggregate:", JSON.stringify(vote));
                     const selectedOption = vote.find(v => v.voters.length > 0)?.name;
+                    console.log("[POLL DEBUG] Selected option:", selectedOption);
+
                     if (!selectedOption) continue;
 
                     if (global.processPollVote) {
