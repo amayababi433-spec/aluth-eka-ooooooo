@@ -119,6 +119,12 @@ async function connectToWA() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
+        getMessage: async (key) => {
+            if (global.activePolls && global.activePolls.has(key.id)) {
+                return global.activePolls.get(key.id).message;
+            }
+            return undefined;
+        },
         generateHighQualityLinkPreview: false,
         markOnlineOnConnect: true
     });
