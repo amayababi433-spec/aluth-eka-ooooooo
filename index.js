@@ -221,6 +221,54 @@ async function connectToWA() {
             if (!mek.message) return;
             if (mek.key.fromMe) return;
 
+            // ?? V7 POLL UPDATE FIX
+            if (mek.message.pollUpdateMessage) {
+                console.log("[POLL DEBUG] UPSERT pollUpdateMessage received!");
+                const creationMsgKey = mek.message.pollUpdateMessage.pollCreationMessageKey;
+                const pollMsgInfo = global.activePolls ? global.activePolls.get(creationMsgKey.id) : null;
+                if (pollMsgInfo) {
+                    try {
+                        const { decryptPollVote } = require('@whiskeysockets/baileys/lib/Utils/process-message');
+                        
+                        const pollCreatorJid = creationMsgKey.participant || creationMsgKey.remoteJid;
+                        const voterJid = mek.key.participant || mek.key.remoteJid;
+                        const pollEncKey = pollMsgInfo.message.messageContextInfo.messageSecret;
+                        
+                        const voteMsg = decryptPollVote(
+                            mek.message.pollUpdateMessage.vote,
+                            {
+                                pollEncKey,
+                                pollCreatorJid,
+                                pollMsgId: creationMsgKey.id,
+                                voterJid
+                            }
+                        );
+                        console.log("[POLL DEBUG] Decrypted Vote:", JSON.stringify(voteMsg));
+                        
+                        const voteAggregate = getAggregateVotesInPollMessage({
+                            message: pollMsgInfo.message,
+                            pollUpdates: [{
+                                pollUpdateMessageKey: mek.key,
+                                vote: voteMsg
+                            }]
+                        });
+                        console.log("[POLL DEBUG] Vote Aggregate:", JSON.stringify(voteAggregate));
+                        
+                        const selectedOption = voteAggregate.find(v => v.voters.length > 0)?.name;
+                        console.log("[POLL DEBUG] Selected:", selectedOption);
+                        
+                        if (selectedOption && global.processPollVote) {
+                            global.processPollVote(voterJid, selectedOption, sock).catch(console.error);
+                        }
+                    } catch(err) {
+                        console.log("[POLL DEBUG] Error decrypting:", err);
+                    }
+                } else {
+                    console.log("[POLL DEBUG] Poll creation message not in activePolls cache");
+                }
+                return;
+            }
+
             const m = mek;
             const type = getContentType(mek.message);
             const from = mek.key.remoteJid;
