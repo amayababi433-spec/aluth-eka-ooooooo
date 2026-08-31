@@ -240,3 +240,14 @@ async function connectToWA() {
 }
 
 connectToWA().catch(err => console.log('Unexpected Error:', err));
+
+
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received: Shutting down gracefully...');
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received: Shutting down gracefully...');
+    process.exit(0);
+});
