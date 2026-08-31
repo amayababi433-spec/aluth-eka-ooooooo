@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running!'));
@@ -12,26 +12,24 @@ const {
     Browsers,
     getContentType,
     initAuthCreds,
-    BufferJSON
+    BufferJSON,
+    makeInMemoryStore,
+    getAggregateVotesInPollMessage
 } = require("@whiskeysockets/baileys");
 const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const pino = require("pino");
 const path = require('path');
-const { commands } = require('./command');
 const config = require('./config');
 
-// ⚠️ GLOBAL ERROR CATCHER (BOT එක CRASH වීම වළක්වයි)
-process.on('uncaughtException', (err) => {
-    console.error('💀 CRITICAL UNCAUGHT EXCEPTION:', err);
-});
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ UNHANDLED REJECTION AT:', promise, 'REASON:', reason);
-});
+const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
+setInterval(() => {
+    if (store && store.messages) store.messages.clear(); // Free up RAM every 30 mins
+}, 1800000);
 
-// 🔓 MESSAGE SANITIZER (UNDEFINED ERRORS නවත්වයි)
-const getMsgContent = (m) => {
-    const msg = m?.message;
+const commands = require('./command').commands;
+
+const getMsgContent = (msg) => {
     if (!msg) return "";
     return msg.conversation || 
            msg.extendedTextMessage?.text || 
@@ -94,37 +92,39 @@ async function useMongoDBAuthState(collection) {
 let mongoClient;
 let collection;
 
+const voteCooldown = new Map();
+setInterval(() => voteCooldown.clear(), 3600000);
+
 async function connectToWA() {
     console.log("🚀 Starting Sew Queen Bot...");
 
-    // Connect to MongoDB only once
     if (!mongoClient) {
         if (!process.env.MONGODB_URI) {
-            throw new Error("MONGODB_URI environment variable is not defined!");
+            console.error("No MONGODB_URI found. Exiting...");
+            return;
         }
         mongoClient = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 10 });
         await mongoClient.connect();
         collection = mongoClient.db('whatsapp_bot').collection('auth_info');
     }
 
-    // Load Auth State from MongoDB
     const { state, saveCreds } = await useMongoDBAuthState(collection);
-    
-    const { version } = await fetchLatestBaileysVersion();
+    const { version, isLatest } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
-        logger: pino({ level: "silent" }),
+        logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
+        browser: Browsers.macOS("Chrome"),
         auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
-        browser: ['Sew Queen Bot', 'Chrome', '1.0.0'],
-        syncFullHistory: false,
         generateHighQualityLinkPreview: false,
         markOnlineOnConnect: true
     });
+
+    store.bind(sock.ev);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -146,7 +146,6 @@ async function connectToWA() {
         } else if (connection === 'open') {
             console.log('✅ Connected to WhatsApp!');
             
-            // Plugins Load කිරීම
             const pluginsDir = path.join(__dirname, 'plugins');
             if (fs.existsSync(pluginsDir)) {
                  const plugins = fs.readdirSync(pluginsDir);
@@ -165,6 +164,38 @@ async function connectToWA() {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // Poll listener for native WhatsApp polls
+    sock.ev.on('messages.update', async (messages) => {
+        for (const msg of messages) {
+            if (msg.update?.pollUpdates) {
+                const pollUpdate = msg.update.pollUpdates[0];
+                const sender = msg.key.remoteJid;
+
+                if (voteCooldown.has(sender) && Date.now() - voteCooldown.get(sender) < 5000) continue;
+                voteCooldown.set(sender, Date.now());
+
+                try {
+                    const pollMsg = await store.loadMessage(sender, msg.key.id);
+                    if (!pollMsg) continue;
+
+                    const vote = getAggregateVotesInPollMessage({
+                        message: pollMsg.message,
+                        pollUpdates: [pollUpdate]
+                    });
+
+                    const selectedOption = vote.find(v => v.voters.length > 0)?.name;
+                    if (!selectedOption) continue;
+
+                    if (global.processPollVote) {
+                        global.processPollVote(sender, selectedOption, sock).catch(console.error);
+                    }
+                } catch (e) {
+                    console.error("Poll Decrypt Error:", e.message);
+                }
+            }
+        }
+    });
 
     sock.ev.on('messages.upsert', async (mek) => {
         try {
@@ -192,7 +223,6 @@ async function connectToWA() {
                 sock.sendMessage(from, { text: text }, { quoted: mek });
             };
 
-            // 1. Commands ('.' තියෙන ඒවා)
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));
                 if (cmd) {
@@ -200,7 +230,6 @@ async function connectToWA() {
                 }
             }
 
-            // 2. Body Listeners (Hi, Hello වගේ ඒවා අහන තැන)
             commands.map(async (command) => {
                 if (command.on === "body") {
                     try {
@@ -208,11 +237,10 @@ async function connectToWA() {
                     } catch(err) { console.log('Plugin Body Error:', err); }
                 }
             });
-
         } catch (e) {
-            console.log(e);
+            console.log('Error in messages.upsert:', e);
         }
     });
 }
 
-connectToWA();
+connectToWA().catch(err => console.log('Unexpected Error:', err));

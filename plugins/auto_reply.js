@@ -1,4 +1,4 @@
-const { cmd } = require('../command');
+﻿const { cmd } = require('../command');
 const axios = require('axios');
 const { MongoClient } = require('mongodb');
 
@@ -40,6 +40,32 @@ async function getDB() {
     return pollCollection;
 }
 
+// Global Poll Vote Handler (Called by index.js)
+global.processPollVote = async (sender, optionName, sock) => {
+    const db = await getDB();
+    if (!db) return;
+
+    let newState = '';
+    
+    if (optionName.includes('0') || optionName.includes('Reset') || optionName.includes('RESET')) {
+        userCache.delete(sender);
+        db.deleteOne({ _id: sender }).catch(() => {}); // Non-blocking
+        return await sock.sendMessage(sender, { text: "🔄 *Reset Successful.*" });
+    } else if (optionName.includes('1') || optionName.includes('Real Human')) {
+        newState = 'REAL';
+        await sock.sendMessage(sender, { text: "✅ *Verification Success!* Owner පැමිණි පසු පිළිතුරු දෙනු ඇත." });
+    } else if (optionName.includes('2') || optionName.includes('AI Bot') || optionName.includes('BOT')) {
+        newState = 'BOT';
+        await sock.sendMessage(sender, { text: "🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!" });
+    }
+
+    // Update RAM & DB
+    if (newState) {
+        userCache.set(sender, { state: newState, lastSeen: new Date().toDateString() });
+        db.updateOne({ _id: sender }, { $set: { state: newState } }, { upsert: true }).catch(() => {});
+    }
+};
+
 cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {
@@ -62,12 +88,11 @@ cmd({
         const today = new Date().toDateString();
         const now = Date.now();
 
-        // 🔥 1. ANTI-SPAM GUARD: තත්පර 3කට වඩා අඩුවෙන් මැසේජ් ආවොත් Ignore කරනවා (Crash වෙන්නේ නෑ)
+        // 🔥 1. ANTI-SPAM GUARD: තත්පර 3කට වඩා අඩුවෙන් මැසේජ් ආවොත් Ignore කරනවා
         const lastMsgTime = spamGuard.get(sender) || 0;
         if (now - lastMsgTime < 3000) return; 
         spamGuard.set(sender, now);
 
-        // මැසේජ් එක Auto-Read කිරීම (Blue Tick)
         try {
             if (conn && typeof conn.readMessages === 'function') {
                 await conn.readMessages([mek.key]);
@@ -75,9 +100,8 @@ cmd({
         } catch (_) {}
 
         const db = await getDB();
-        if (!db) return; // DB නැත්නම් නවතින්න
+        if (!db) return;
         
-        // 🔥 2. HYBRID CACHE: RAM එකෙන් මුලින්ම බලනවා
         let userData = userCache.get(sender);
 
         if (!userData) {
@@ -85,45 +109,35 @@ cmd({
             if (userData) userCache.set(sender, userData);
         }
 
-        // 3. Reset Command
+        // 3. Reset Command (Fallback if they still type 0 manually)
         if (text === '0') {
             userCache.delete(sender);
-            // 🔥 Non-blocking DB write (await නෑ, ඒ නිසා Bot හිරවෙන්නේ නෑ)
             db.deleteOne({ _id: sender }).catch(() => {}); 
             return await reply("🔄 *Reset Successful.* ඊළඟ මැසේජ් එකේදී නැවත Poll එක පැමිණේවි.");
         }
 
-        // 4. New User / Next Day Check
+        // 4. New User / Next Day Check -> Send Native Poll
         if (!userData || userData.lastSeen !== today) {
             const newState = { lastSeen: today, state: 'WAITING_FOR_VOTE' };
             userCache.set(sender, newState); 
-            // Non-blocking DB write
             db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
             
-            const pollMsg = `📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n1️⃣ Real Human 👦\n2️⃣ AI Bot 🤖\n0️⃣ Reset State 🔄\n\n_(කරුණාකර 1, 2 හෝ 0 Reply කරන්න)_`;
-            return await reply(pollMsg);
+            const pollMsg = {
+                poll: {
+                    name: "📊 DMC Verification Poll 📊\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?",
+                    values: ["0.RESET 📊", "1.Real Human", "2.BOT"],
+                    selectableCount: 1
+                }
+            };
+            return await conn.sendMessage(from, pollMsg);
         }
 
         const state = userData.state;
 
-        // 5. Voting Logic
-        if (state === 'WAITING_FOR_VOTE') {
-            if (text === '1') {
-                userData.state = 'REAL';
-                db.updateOne({ _id: sender }, { $set: { state: 'REAL' } }).catch(() => {});
-                return await reply("✅ *Verification Success!* Owner පැමිණි පසු පිළිතුරු දෙනු ඇත.");
-            } else if (text === '2') {
-                userData.state = 'BOT';
-                db.updateOne({ _id: sender }, { $set: { state: 'BOT' } }).catch(() => {});
-                return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
-            } else {
-                return await reply("⚠️ කරුණාකර 1, 2 හෝ 0 පමණක් Reply කරන්න.");
-            }
-        }
+        if (state === 'WAITING_FOR_VOTE') return; // Ignore text if they haven't voted
 
-        // 6. Block AI for Real Users (but keep personalWords logic if needed)
+        // 6. Block AI for Real Users (but keep personalWords logic)
         if (state === 'REAL') {
-            // පෞද්ගලික වචන තියෙනවද කියලා check කිරීම
             const isPersonal = personalWords.some(word => lowerText.includes(word));
             if (isPersonal) {
                 return await reply("⚠️ *කරුණාකර රැඳී සිටින්න.* \n\nOwner පැමිණි පසු ඔබට පිළිතුරු ලබා දෙනු ඇත.");
