@@ -230,8 +230,15 @@ async function connectToWA() {
                     try {
                         const { decryptPollVote } = require('@whiskeysockets/baileys/lib/Utils/process-message');
                         
-                        const pollCreatorJid = creationMsgKey.participant || creationMsgKey.remoteJid;
-                        const voterJid = mek.key.participant || mek.key.remoteJid;
+                        
+                        const { jidNormalizedUser } = require('@whiskeysockets/baileys/lib/WABinary/jid-utils');
+                        const { getKeyAuthor } = require('@whiskeysockets/baileys/lib/Utils/generics');
+                        const meIdNormalised = jidNormalizedUser(sock.user.id);
+                        const pollCreatorJid = getKeyAuthor(creationMsgKey, meIdNormalised);
+
+                        
+                        const voterJid = getKeyAuthor(mek.key, meIdNormalised);
+
                         const pollEncKey = pollMsgInfo.message.messageContextInfo.messageSecret;
                         
                         const voteMsg = decryptPollVote(
