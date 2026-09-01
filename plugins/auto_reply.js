@@ -44,7 +44,7 @@ function getLocalImage() {
         return fs.readFileSync(path.join(__dirname, '../thumbnail/poll.png')); 
     } catch (e) {
         try {
-            return fs.readFileSync(path.join(__dirname, '../thumbnail/alive.jpg'));
+            return fs.readFileSync(path.join(__dirname, '../thumbnail/menu.png'));
         } catch (err) {
             return null;
         }
@@ -53,10 +53,10 @@ function getLocalImage() {
 
 async function sendVerificationMenu(conn, from) {
     const localImg = getLocalImage();
-    const captionText = "📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n*1* - Real Human 👦\n*2* - BOT 🤖\n*0* - RESET 🔄\n\n_කරුණාකර අදාළ අංකය පමණක් (1 හෝ 2) පහළින් Type කර එවන්න._";
+    const captionText = "📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n*1* - Real Human 👦\n*2* - BOT 🤖\n*0* - RESET 🔄\n\n_කරුණාකර අදාළ අංකය පමණක් (1, 2 හෝ 0) පහළින් Type කර එවන්න._";
     
     if (localImg) {
-        await conn.sendMessage(from, { image: localImg, caption: captionText });
+        await conn.sendMessage(from, { image: localImg, mimetype: 'image/png', caption: captionText });
     } else {
         await conn.sendMessage(from, { text: captionText });
     }
@@ -122,7 +122,9 @@ cmd({
                 db.updateOne({ _id: sender }, { $set: { state: 'BOT' } }).catch(() => {});
                 return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
             } else {
-                return await reply("⚠️ කරුණාකර ඉහත මෙනුවෙන් නිවැරදි විකල්පයක් තෝරා, ඊට අදාළ අංකය (1 හෝ 2) පමණක් Type කර එවන්න.");
+                await reply("⚠️ කරුණාකර ඉහත මෙනුවෙන් නිවැරදි විකල්පයක් තෝරා, ඊට අදාළ අංකය (1, 2 හෝ 0) පමණක් Type කර එවන්න.");
+                await sendVerificationMenu(conn, from);
+                return;
             }
         }
 
