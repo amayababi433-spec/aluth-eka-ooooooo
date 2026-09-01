@@ -105,6 +105,7 @@ cmd({
         // 1. DYNAMIC EXACT MATCHING (SUPER FAST & 100% ACCURATE)
         // Check if any word in the message EXACTLY matches a voice filename
         const words = lowerMessage.replace(/[^\w\s\u0D80-\u0DFF]/g, '').split(/\s+/);
+        if (words.length > 3 || message.length > 40) return; // Stop triggering on long sentences!
         
         // Also check full message match first
         if (voiceIndex.has(`${lowerMessage}.mp3`)) targetFileName = `${lowerMessage}.mp3`;
