@@ -142,7 +142,7 @@ cmd({
         if (state === 'WAITING_FOR_VOTE') {
             // 🔹 ANTI-BOT STRIKE SYSTEM 🔹
             const strikes = (userData.strikes || 0) + 1;
-            if (strikes >= 3) {
+            if (strikes >= 2) {
                 userData.state = 'BLOCKED';
                 userCache.set(sender, userData);
                 db.updateOne({ _id: sender }, { $set: { state: 'BLOCKED' } }).catch(() => {});
