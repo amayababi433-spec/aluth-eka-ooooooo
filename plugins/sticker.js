@@ -6,7 +6,7 @@ const { createSticker, DMC_PACKNAME, DMC_AUTHOR } = require('../lib/sticker');
 const { writeExifImg, writeExifVid } = require('../lib/exif');
 const { isGoogleDriveUrl, streamFromGoogleDrive } = require('../lib/downloader');
 
-const BOT_NAME = '👑 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ＤＭＣ™ 👑';
+const BOT_NAME = '🌸 ＳＥＷ ＱＵＥＥＮ ＭＤ 🌸';
 
 function normalizeQuotedFromContext(mek, from) {
   const msg = mek.message || {};
@@ -59,9 +59,41 @@ cmd({
     // HARD-LOCK metadata
     const meta = { packname: DMC_PACKNAME, author: DMC_AUTHOR };
 
+    // 1.5) If user provides a text query for AI animated sticker
+    if (q && !isGoogleDriveUrl(q) && !mek.message?.imageMessage && !mek.message?.videoMessage && !mek.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+        reply(`${BOT_NAME}\n\n✨ AI is generating an animated sticker for: *${q}*...`);
+        try {
+            const axios = require('axios');
+            const cheerio = require('cheerio');
+            const res = await axios.get(`https://tenor.com/search/${encodeURIComponent(q.replace(/ /g, '-'))}-gifs`);
+            const $ = cheerio.load(res.data);
+            
+            let foundUrl = null;
+            $('div.Gif img').each((i, el) => {
+                const src = $(el).attr('src');
+                if (src && src.endsWith('.gif')) {
+                    foundUrl = src;
+                    return false; 
+                }
+            });
+
+            if (!foundUrl) {
+                return reply(`${BOT_NAME}\n\n⚠️ Sorry, AI couldn't find an animated sticker for that.`);
+            }
+
+            const gifRes = await axios.get(foundUrl, { responseType: 'arraybuffer' });
+            const buffer = Buffer.from(gifRes.data);
+            const stickerBuffer = await createSticker(buffer, 'video/gif', meta.packname, meta.author);
+            return await conn.sendMessage(from, { sticker: stickerBuffer }, { quoted: mek });
+        } catch (err) {
+            console.error(err);
+            return reply(`${BOT_NAME}\n\n⚠️ Error generating AI animated sticker.`);
+        }
+    }
+
     // 1) If user provides a Google Drive link: .sticker <drive_link>
     if (q && isGoogleDriveUrl(q)) {
-      reply(`${BOT_NAME}\n\n🎨 Creating sticker from Google Drive...`);
+      reply(`${BOT_NAME}\n\n⏳ Creating sticker from Google Drive...`);
 
       // Sticker sources are expected to be <= 20MB
       const { stream, contentType } = await streamFromGoogleDrive(q);
@@ -90,10 +122,10 @@ cmd({
 
     const mime = targetMsg?.mimetype || '';
     if (!mime || (!mime.includes('image') && !mime.includes('video') && !mime.includes('gif'))) {
-      return reply(`${BOT_NAME}\n\n❌ Reply to an image / video / GIF to make a sticker.\nOr use: .sticker <Google Drive link>`);
+      return reply(`${BOT_NAME}\n\n⚠️ Reply to an image / video / GIF to make a sticker.\nOr use: .sticker <name> to generate an AI sticker!`);
     }
 
-    reply(`${BOT_NAME}\n\n🎨 Creating Pro Sticker...`);
+    reply(`${BOT_NAME}\n\n⏳ Creating Pro Sticker...`);
 
     // NOTE: baileys downloadMediaMessage returns a buffer. Stickers are small; safe on 1GB.
     const buffer = await downloadMediaMessage(targetWebMsg, 'buffer', {}, { logger: console });
@@ -115,10 +147,10 @@ cmd({
       } catch {}
 
       console.error(primaryErr);
-      return reply(`${BOT_NAME}\n\n❌ Sticker creation failed: ${primaryErr?.message || primaryErr}`);
+      return reply(`${BOT_NAME}\n\n⚠️ Sticker creation failed: ${primaryErr?.message || primaryErr}`);
     }
   } catch (e) {
     console.error(e);
-    reply(`${BOT_NAME}\n\n❌ Error: ${e.message}`);
+    reply(`${BOT_NAME}\n\n⚠️ Error: ${e.message}`);
   }
 });
