@@ -42,7 +42,7 @@ global.processPollVote = async (sender, optionName, sock) => {};
 
 function getLocalImage() {
     try {
-        return fs.readFileSync(path.join(__dirname, '../thumbnail/alive.jpg')); 
+        return fs.readFileSync(path.join(__dirname, '../thumbnail/poll.png')); 
     } catch (e) {
         try {
             return fs.readFileSync(path.join(__dirname, '../thumbnail/menu.jpg'));
