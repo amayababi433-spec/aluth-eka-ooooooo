@@ -90,16 +90,31 @@ cmd({
         const db = await getDB();
         if (!db) return;
         
+        // 🔹 0, 1, 2 Global Shortcuts 🔹
+        if (text === '0' || lowerText === 'reset' || text.includes('0.RESET')) {
+            userCache.delete(sender);
+            db.deleteOne({ _id: sender }).catch(() => {}); 
+            return await reply("🔄 *Reset Successful.* \n\nදැන් ඔබට අවශ්‍ය නම් නැවතත් 1 (Real) හෝ 2 (Bot) ලෙස යවා Mode එක මාරු කළ හැක. නැතහොත් වෙනත් මැසේජ් එකක් යවා Menu එක ලබාගන්න.");
+        }
+
+        if (text === '1' || lowerText === 'real' || text.includes('1.Real Human')) {
+            const newState = { lastSeen: today, state: 'REAL' };
+            userCache.set(sender, newState);
+            db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {});
+            return await reply("✅ *Verification Success!* Owner පැමිණි පසු පිළිතුරු දෙනු ඇත.");
+        }
+
+        if (text === '2' || lowerText === 'bot' || text.includes('2.BOT')) {
+            const newState = { lastSeen: today, state: 'BOT' };
+            userCache.set(sender, newState);
+            db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {});
+            return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
+        }
+
         let userData = userCache.get(sender);
         if (!userData) {
             userData = await db.findOne({ _id: sender });
             if (userData) userCache.set(sender, userData);
-        }
-
-        if (text === '0' || lowerText === 'reset' || text.includes('0.RESET')) {
-            userCache.delete(sender);
-            db.deleteOne({ _id: sender }).catch(() => {}); 
-            return await reply("🔄 *Reset Successful.* ඊළඟ මැසේජ් එකේදී නැවත මෙනුව පැමිණේවි.");
         }
 
         if (!userData || userData.lastSeen !== today) {
@@ -113,19 +128,9 @@ cmd({
         const state = userData.state;
         
         if (state === 'WAITING_FOR_VOTE') {
-            if (text === '1' || lowerText.includes('real human') || lowerText.includes('real')) {
-                userData.state = 'REAL';
-                db.updateOne({ _id: sender }, { $set: { state: 'REAL' } }).catch(() => {});
-                return await reply("✅ *Verification Success!* Owner පැමිණි පසු පිළිතුරු දෙනු ඇත.");
-            } else if (text === '2' || lowerText.includes('bot')) {
-                userData.state = 'BOT';
-                db.updateOne({ _id: sender }, { $set: { state: 'BOT' } }).catch(() => {});
-                return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
-            } else {
-                await reply("⚠️ කරුණාකර ඉහත මෙනුවෙන් නිවැරදි විකල්පයක් තෝරා, ඊට අදාළ අංකය (1, 2 හෝ 0) පමණක් Type කර එවන්න.");
-                await sendVerificationMenu(conn, from);
-                return;
-            }
+            await reply("⚠️ කරුණාකර ඉහත මෙනුවෙන් නිවැරදි විකල්පයක් තෝරා, ඊට අදාළ අංකය (1, 2 හෝ 0) පමණක් Type කර එවන්න.");
+            await sendVerificationMenu(conn, from);
+            return;
         }
 
         if (state === 'REAL') {
