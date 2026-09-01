@@ -3,7 +3,6 @@ const axios = require('axios');
 const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const path = require('path');
-const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@whiskeysockets/baileys');
 
 const ENCODED_KEYS = [
     "QVEuQWI4Uk42TDNhOTVxeUd1YU5fWGpLQUk0XzRCT2hmdU9XeVB4eUpGQXotN0JjMjJuSHc=",
@@ -45,52 +44,22 @@ function getLocalImage() {
         return fs.readFileSync(path.join(__dirname, '../thumbnail/poll.png')); 
     } catch (e) {
         try {
-            return fs.readFileSync(path.join(__dirname, '../thumbnail/menu.jpg'));
+            return fs.readFileSync(path.join(__dirname, '../thumbnail/alive.jpg'));
         } catch (err) {
             return null;
         }
     }
 }
 
-async function sendInteractiveUI(conn, from, mek) {
-    let media;
+async function sendVerificationMenu(conn, from) {
     const localImg = getLocalImage();
+    const captionText = "📊 *DMC Verification* 📊\n\nඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?\n\n*1* - Real Human 👦\n*2* - BOT 🤖\n*0* - RESET 🔄\n\n_කරුණාකර අදාළ අංකය පමණක් (1 හෝ 2) පහළින් Type කර එවන්න._";
     
     if (localImg) {
-        try {
-            media = await prepareWAMessageMedia({ image: localImg }, { upload: conn.waUploadToServer });
-        } catch (e) {
-            media = null;
-        }
+        await conn.sendMessage(from, { image: localImg, caption: captionText });
+    } else {
+        await conn.sendMessage(from, { text: captionText });
     }
-    
-    const interactiveMessage = {
-        body: { text: "ඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?" },
-        footer: { text: "DMC Verification" },
-        header: {
-            title: "📊 *DMC Verification Poll* 📊",
-            hasMediaAttachment: !!media,
-            ...(media ? { imageMessage: media.imageMessage } : {})
-        },
-        nativeFlowMessage: {
-            buttons: [
-                { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "1. Real Human 👦", id: "1" }) },
-                { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "2. BOT 🤖", id: "2" }) },
-                { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "0. RESET 🔄", id: "0" }) }
-            ]
-        }
-    };
-    
-    const msg = generateWAMessageFromContent(from, {
-        viewOnceMessage: {
-            message: {
-                messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
-                interactiveMessage: interactiveMessage
-            }
-        }
-    }, { quoted: mek });
-    
-    await conn.relayMessage(from, msg.message, { messageId: msg.key.id });
 }
 
 cmd({
@@ -104,15 +73,6 @@ cmd({
 
         const sender = mek.key.participant || mek.key.remoteJid || from;
         let text = body.trim();
-        
-        // 🔹 Extract Interactive Button Click ID 🔹
-        const interactiveRes = mek.message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson;
-        if (interactiveRes) {
-            try { 
-                text = JSON.parse(interactiveRes).id; 
-            } catch (e) {}
-        }
-        
         const lowerText = text.toLowerCase();
         const today = new Date().toDateString();
         const now = Date.now();
@@ -146,14 +106,14 @@ cmd({
             const newState = { lastSeen: today, state: 'WAITING_FOR_VOTE' };
             userCache.set(sender, newState); 
             db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
-            await sendInteractiveUI(conn, from, mek);
+            await sendVerificationMenu(conn, from);
             return;
         }
 
         const state = userData.state;
         
         if (state === 'WAITING_FOR_VOTE') {
-            if (text === '1' || lowerText.includes('real human')) {
+            if (text === '1' || lowerText.includes('real human') || lowerText.includes('real')) {
                 userData.state = 'REAL';
                 db.updateOne({ _id: sender }, { $set: { state: 'REAL' } }).catch(() => {});
                 return await reply("✅ *Verification Success!* Owner පැමිණි පසු පිළිතුරු දෙනු ඇත.");
@@ -162,9 +122,7 @@ cmd({
                 db.updateOne({ _id: sender }, { $set: { state: 'BOT' } }).catch(() => {});
                 return await reply("🤖 *Bot Mode Activated.* AI සමග Chat කිරීම ආරම්භ කරන්න!");
             } else {
-                // If they sent garbage text, resend the UI
-                await sendInteractiveUI(conn, from, mek);
-                return;
+                return await reply("⚠️ කරුණාකර ඉහත මෙනුවෙන් නිවැරදි විකල්පයක් තෝරා, ඊට අදාළ අංකය (1 හෝ 2) පමණක් Type කර එවන්න.");
             }
         }
 
