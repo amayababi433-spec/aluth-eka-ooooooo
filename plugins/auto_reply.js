@@ -71,6 +71,13 @@ cmd({
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
         if (isOwner) return;
 
+        // 🔹 ANTI-BOT: Ignore interactive messages completely 🔹
+        const msgKeys = Object.keys(mek.message || {});
+        const hasInteractive = msgKeys.some(k => ['templateMessage', 'listMessage', 'buttonsMessage', 'interactiveMessage', 'buttonsResponseMessage', 'templateButtonReplyMessage', 'listResponseMessage', 'interactiveResponseMessage'].includes(k));
+        if (hasInteractive || mek.message?.viewOnceMessageV2?.message?.interactiveMessage || mek.message?.viewOnceMessage?.message?.interactiveMessage) {
+            return; 
+        }
+
         const sender = mek.key.participant || mek.key.remoteJid || from;
         let text = body.trim();
         const lowerText = text.toLowerCase();
@@ -117,8 +124,13 @@ cmd({
             if (userData) userCache.set(sender, userData);
         }
 
+        // 🔹 ANTI-BOT: Ignore blocked bots forever 🔹
+        if (userData && userData.state === 'BLOCKED' && userData.lastSeen === today) {
+            return;
+        }
+
         if (!userData || userData.lastSeen !== today) {
-            const newState = { lastSeen: today, state: 'WAITING_FOR_VOTE' };
+            const newState = { lastSeen: today, state: 'WAITING_FOR_VOTE', strikes: 0 };
             userCache.set(sender, newState); 
             db.updateOne({ _id: sender }, { $set: newState }, { upsert: true }).catch(() => {}); 
             await sendVerificationMenu(conn, from);
@@ -128,6 +140,19 @@ cmd({
         const state = userData.state;
         
         if (state === 'WAITING_FOR_VOTE') {
+            // 🔹 ANTI-BOT STRIKE SYSTEM 🔹
+            const strikes = (userData.strikes || 0) + 1;
+            if (strikes >= 3) {
+                userData.state = 'BLOCKED';
+                userCache.set(sender, userData);
+                db.updateOne({ _id: sender }, { $set: { state: 'BLOCKED' } }).catch(() => {});
+                return; // Permanent silence to prevent infinite loops
+            }
+            
+            userData.strikes = strikes;
+            userCache.set(sender, userData);
+            db.updateOne({ _id: sender }, { $set: { strikes: strikes } }).catch(() => {});
+
             await reply("⚠️ කරුණාකර ඉහත මෙනුවෙන් නිවැරදි විකල්පයක් තෝරා, ඊට අදාළ අංකය (1, 2 හෝ 0) පමණක් Type කර එවන්න.");
             await sendVerificationMenu(conn, from);
             return;
