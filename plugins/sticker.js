@@ -4,9 +4,12 @@ const fs = require('fs');
 
 const { createSticker, DMC_PACKNAME, DMC_AUTHOR } = require('../lib/sticker');
 const { writeExifImg, writeExifVid } = require('../lib/exif');
-const { isGoogleDriveUrl, streamFromGoogleDrive } = require('../lib/downloader');
 
-const BOT_NAME = '🌸 ＳＥＷ ＱＵＥＥＮ ＭＤ 🌸';
+const BOT_NAME = '👑 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ＤＭＣ™ 👑';
+
+function isGoogleDriveUrl(url) {
+    return typeof url === 'string' && (url.includes('drive.google.com') || url.includes('docs.google.com'));
+}
 
 function normalizeQuotedFromContext(mek, from) {
   const msg = mek.message || {};
@@ -93,15 +96,7 @@ cmd({
 
     // 1) If user provides a Google Drive link: .sticker <drive_link>
     if (q && isGoogleDriveUrl(q)) {
-      reply(`${BOT_NAME}\n\n⏳ Creating sticker from Google Drive...`);
-
-      // Sticker sources are expected to be <= 20MB
-      const { stream, contentType } = await streamFromGoogleDrive(q);
-      const buffer = await streamToBufferWithLimit(stream, 20 * 1024 * 1024);
-
-      const mime = contentType || 'application/octet-stream';
-      const stickerBuffer = await createSticker(buffer, mime, meta.packname, meta.author);
-      return await conn.sendMessage(from, { sticker: stickerBuffer }, { quoted: mek });
+      return reply(`${BOT_NAME}\n\n⚠️ Google Drive sticker generation is currently unsupported.`);
     }
 
     // 2) Otherwise: reply to image/video/gif
