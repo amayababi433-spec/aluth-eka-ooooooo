@@ -1,5 +1,4 @@
 require('dotenv').config();
-global.blockedUsersCache = new Map();
 const express = require('express');
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running!'));
@@ -120,12 +119,6 @@ async function connectToWA() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
-        getMessage: async (key) => {
-            if (global.activePolls && global.activePolls.has(key.id)) {
-                return global.activePolls.get(key.id).message;
-            }
-            return undefined;
-        },
         generateHighQualityLinkPreview: false,
         markOnlineOnConnect: true
     });
@@ -145,7 +138,7 @@ async function connectToWA() {
                 console.log(`⚠️ Reconnecting... (Reason: ${reason})`);
                 setTimeout(() => {
                     console.log('Restarting process to reconnect cleanly...');
-                    process.exit(1);
+                    console.log("Ignore reconnect");
                 }, 3000);
             } else {
                 console.log('❌ Session Logged out. Rescan QR.');
@@ -179,31 +172,19 @@ async function connectToWA() {
                 const pollUpdate = msg.update.pollUpdates[0];
                 const sender = msg.key.remoteJid;
 
-                
-                console.log("[POLL DEBUG] Received poll update for message ID:", msg.key.id);
-                console.log("[POLL DEBUG] RAW Poll Update:", JSON.stringify(pollUpdate));
-
+                if (voteCooldown.has(sender) && Date.now() - voteCooldown.get(sender) < 5000) continue;
+                voteCooldown.set(sender, Date.now());
 
                 try {
                     const pollMsg = global.activePolls.get(msg.key.id);
-                    
-                    if (!pollMsg) {
-                        console.log("[POLL DEBUG] Error: pollMsg not found in activePolls cache for id", msg.key.id);
-                        continue;
-                    }
-                    console.log("[POLL DEBUG] Found pollMsg in cache.");
- // Ignore if we didn't cache the poll
+                    if (!pollMsg) continue; // Ignore if we didn't cache the poll
 
                     const vote = getAggregateVotesInPollMessage({
                         message: pollMsg.message,
                         pollUpdates: [pollUpdate]
                     });
 
-                    
-                    console.log("[POLL DEBUG] Decrypted vote aggregate:", JSON.stringify(vote));
                     const selectedOption = vote.find(v => v.voters.length > 0)?.name;
-                    console.log("[POLL DEBUG] Selected option:", selectedOption);
-
                     if (!selectedOption) continue;
 
                     if (global.processPollVote) {
@@ -221,95 +202,6 @@ async function connectToWA() {
             mek = mek.messages[0];
             if (!mek.message) return;
             if (mek.key.fromMe) return;
-
-            // ?? V7 POLL UPDATE FIX
-            if (mek.message.pollUpdateMessage) {
-                console.log("[POLL DEBUG] UPSERT pollUpdateMessage received!");
-                const creationMsgKey = mek.message.pollUpdateMessage.pollCreationMessageKey;
-                const pollMsgInfo = global.activePolls ? global.activePolls.get(creationMsgKey.id) : null;
-                if (pollMsgInfo) {
-                    try {
-                        const { decryptPollVote } = require('@whiskeysockets/baileys/lib/Utils/process-message');
-                        
-                        
-                        const { jidNormalizedUser } = require('@whiskeysockets/baileys/lib/WABinary/jid-utils');
-                        const { getKeyAuthor } = require('@whiskeysockets/baileys/lib/Utils/generics');
-                        const meIdNormalised = jidNormalizedUser(sock.user.id);
-                        const pollCreatorJid = getKeyAuthor(creationMsgKey, meIdNormalised);
-
-                        
-                        const voterJid = getKeyAuthor(mek.key, meIdNormalised);
-
-                        const pollEncKey = pollMsgInfo.message.messageContextInfo?.messageSecret;
-console.log("[POLL DEBUG] DUMP:", {
-    pollCreatorJid,
-    pollMsgId: creationMsgKey.id,
-    voterJid,
-    pollEncKeyType: typeof pollEncKey,
-    pollEncKeyLength: pollEncKey ? pollEncKey.length : 0,
-    isBuffer: Buffer.isBuffer(pollEncKey),
-    isUint8Array: pollEncKey instanceof Uint8Array
-});
-                        
-                        let voteMsg;
-                                                let realPn = null;
-                        try {
-                            if (voterJid && voterJid.includes('@lid') && sock.signalRepository?.lidMapping?.getPNForLID) {
-                                realPn = await sock.signalRepository.lidMapping.getPNForLID(voterJid);
-                                
-                                console.log("[POLL DEBUG] Found Real PN for LID:", realPn);
-                            } else {
-                                console.log("[POLL DEBUG] getPNForLID returned null or missing for", voterJid);
-                              }
-                          } catch(e) {}
-                        
-                        const possibleVoters = [voterJid, realPn, voterJid.replace('@lid', '@s.whatsapp.net'), mek.key.remoteJid, mek.key.participant].filter(Boolean);
-                        const possibleCreators = [pollCreatorJid, pollCreatorJid.replace('@s.whatsapp.net', '@lid'), pollCreatorJid.replace('@s.whatsapp.net', '@c.us')];
-                        
-                        let decrypted = false;
-                        for (const cJid of possibleCreators) {
-                            for (const vJid of possibleVoters) {
-                                try {
-                                    voteMsg = decryptPollVote(
-                                        mek.message.pollUpdateMessage.vote,
-                                        { pollEncKey, pollCreatorJid: cJid, pollMsgId: creationMsgKey.id, voterJid: vJid }
-                                    );
-                                    decrypted = true;
-                                    console.log("[POLL DEBUG] Successfully decrypted with creator:", cJid, "voter:", vJid);
-                                    break;
-                                } catch(e) {}
-                            }
-                            if (decrypted) break;
-                        }
-                        
-                        if (!decrypted) {
-                            throw new Error("All decryption attempts failed");
-                        }
-                        console.log("[POLL DEBUG] Decrypted Vote:", JSON.stringify(voteMsg));
-                        
-                        const voteAggregate = getAggregateVotesInPollMessage({
-                            message: pollMsgInfo.message,
-                            pollUpdates: [{
-                                pollUpdateMessageKey: mek.key,
-                                vote: voteMsg
-                            }]
-                        });
-                        console.log("[POLL DEBUG] Vote Aggregate:", JSON.stringify(voteAggregate));
-                        
-                        const selectedOption = voteAggregate.find(v => v.voters.length > 0)?.name;
-                        console.log("[POLL DEBUG] Selected:", selectedOption);
-                        
-                        if (selectedOption && global.processPollVote) {
-                            global.processPollVote(voterJid, selectedOption, sock).catch(console.error);
-                        }
-                    } catch(err) {
-                        console.log("[POLL DEBUG] Error decrypting:", err);
-                    }
-                } else {
-                    console.log("[POLL DEBUG] Poll creation message not in activePolls cache");
-                }
-                return;
-            }
 
             const m = mek;
             const type = getContentType(mek.message);

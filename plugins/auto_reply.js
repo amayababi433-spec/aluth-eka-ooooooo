@@ -78,7 +78,12 @@ cmd({
             return; 
         }
 
+        
         const sender = mek.key.participant || mek.key.remoteJid || from;
+
+        // ?? OWNER BLOCK GUARD ??
+        if (global.blockedUsersCache && global.blockedUsersCache.has(sender)) return;
+
         let text = body.trim();
         const lowerText = text.toLowerCase();
         const today = new Date().toDateString();
