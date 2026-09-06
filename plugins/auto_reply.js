@@ -17,7 +17,7 @@ const GEMINI_KEYS = process.env.GEMINI_KEYS
     : ENCODED_KEYS.map(k => Buffer.from(k, 'base64').toString('utf8'));
 
 const personalWords = ['clz', 'class', 'enawada', 'yanawada', 'bus', 'kiye', 'heta', 'ada'];
-const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-pro'];
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
 
 let pollCollection;
 const userCache = new Map(); 
