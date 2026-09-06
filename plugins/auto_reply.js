@@ -185,6 +185,7 @@ ${historyText}
 
 Bot:`;
             let aiReply = null;
+            let apiErrorMsg = null;
             for (let i = 0; i < GEMINI_KEYS.length; i++) {
                 const currentKey = GEMINI_KEYS[i];
                 for (const model of GEMINI_MODELS) {
@@ -197,13 +198,21 @@ Bot:`;
                         aiReply = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
                         if (aiReply) break;
                     } catch (err) {
+                        apiErrorMsg = err?.response?.data?.error?.message || err.message;
                         if (err?.response?.status === 429) break; 
                     }
                 }
                 if (aiReply) break;
             }
             if (aiReply) {
-                return await reply(`🤖 ${aiReply.trim()}`);
+                const cleanedReply = aiReply.trim();
+                userData.history.push({ role: 'Bot', content: cleanedReply });
+                userCache.set(sender, userData);
+                db.updateOne({ _id: sender }, { $set: { history: userData.history } }).catch(() => {});
+                return await reply(`?? ${cleanedReply}`);
+            } else {
+                return await reply(`?? [System Alert] Bot AI crashed!\nReason: ${apiErrorMsg}\n\n(Owner, please check your Gemini API Keys!)`);
+            }`);
             }
         }
 
