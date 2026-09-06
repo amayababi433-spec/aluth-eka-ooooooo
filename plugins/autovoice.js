@@ -96,7 +96,7 @@ cmd({
     try {
         if (sender && typeof sender === 'string' && sender.includes('94777297616')) return;
 
-        const sender = mek.key.participant || mek.key.remoteJid || from;
+        
 
         // ?? OWNER BLOCK GUARD ??
         if (global.blockedUsersCache && global.blockedUsersCache.has(sender)) return;
