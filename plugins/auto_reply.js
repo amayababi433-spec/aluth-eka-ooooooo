@@ -208,10 +208,9 @@ Bot:`;
                 userData.history.push({ role: 'Bot', content: cleanedReply });
                 userCache.set(sender, userData);
                 db.updateOne({ _id: sender }, { $set: { history: userData.history } }).catch(() => {});
-                return await reply(`?? ${cleanedReply}`);
+                return await reply(`🤖 ${cleanedReply}`);
             } else {
-                return await reply(`?? [System Alert] Bot AI crashed!\nReason: ${apiErrorMsg}\n\n(Owner, please check your Gemini API Keys!)`);
-            }`);
+                return await reply(`⚠️ [System Alert] Bot AI crashed!\nReason: ${apiErrorMsg}\n\n(Owner, please check your Gemini API Keys!)`);
             }
         }
 
