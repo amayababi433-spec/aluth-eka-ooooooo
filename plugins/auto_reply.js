@@ -69,7 +69,7 @@ cmd({
         if (!body || typeof body !== 'string') return;
         if (isGroup || from?.endsWith('@g.us') || mek?.key?.fromMe) return;
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
-        if (isOwner) return;
+        // if (isOwner) return; // Removed so owner can test bot
 
         // 🔹 ANTI-BOT: Ignore interactive messages completely 🔹
         const msgKeys = Object.keys(mek.message || {});
