@@ -331,6 +331,8 @@ console.log("[POLL DEBUG] DUMP:", {
                 sock.sendMessage(from, { text: text }, { quoted: mek });
             };
 
+            if (global.BOT_MODE === "private" && !isOwner) return;
+
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));
                 if (cmd) {
@@ -341,6 +343,7 @@ console.log("[POLL DEBUG] DUMP:", {
             commands.map(async (command) => {
                 if (command.on === "body") {
                     try {
+                        if (global.BOT_MODE === "private" && !isOwner) return;
                         await command.function(sock, mek, m, { from, body, isOwner, isGroup, reply, sender });
                     } catch(err) { console.log('Plugin Body Error:', err); }
                 }
