@@ -117,12 +117,35 @@ cmd({ pattern: "rmblock", react: "✅", desc: "Remove block" }, async (conn, mek
     if (!isAuthorized(mek)) return;
     await deleteCommandMsg(conn, mek, from);
 
-    let targets = getTargetJids(q, m, from);
-    if (targets.length === 0) return reply("⚠️ කරුණාකර අංකයක් ලබාදෙන්න (උදා: .rmblock 9471XXXXXXX).");
-
     try {
         const db = await getBlockDB();
         let unblockedNums = [];
+
+        // Check if user wants to delete ALL blocks (.rmblock all)
+        if (q && q.toLowerCase() === 'all') {
+            if (global.blockedUsersCache.size === 0) return reply("⚠️ Block List එක හිස්!");
+            await db.deleteMany({});
+            global.blockedUsersCache.clear();
+            return reply("✅ *Block List එක සම්පූර්ණයෙන්ම මකා දමන ලදී!*");
+        }
+
+        // Check if user gave an index (e.g. .rmblock 1, .rmblock 2)
+        if (q && /^\d{1,3}$/.test(q.trim())) {
+            let index = parseInt(q.trim()) - 1;
+            let keys = Array.from(global.blockedUsersCache.keys());
+            if (index >= 0 && index < keys.length) {
+                let targetJid = keys[index];
+                await db.deleteOne({ _id: targetJid });
+                global.blockedUsersCache.delete(targetJid);
+                return reply(`✅ Removed Block for: ${targetJid.split('@')[0]} (Index: ${index + 1})`);
+            } else {
+                return reply("⚠️ වැරදි අංකයක් (Index out of range). කරුණාකර .blocklist ගසා නිවැරදි අංකය ලබාදෙන්න.");
+            }
+        }
+
+        // Standard number matching
+        let targets = getTargetJids(q, m, from);
+        if (targets.length === 0) return reply("⚠️ කරුණාකර අංකයක් (947...) හෝ List එකේ අංකයක් (උදා: .rmblock 1) ලබාදෙන්න.");
 
         for (let t of targets) {
             await db.deleteOne({ _id: t.jid });
