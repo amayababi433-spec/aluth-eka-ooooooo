@@ -323,7 +323,7 @@ console.log("[POLL DEBUG] DUMP:", {
             const command = isCmd ? body.slice(1).trim().split(' ')[0].toLowerCase() : '';
             const args = body.trim().split(/ +/).slice(1);
             const q = args.join(' ');
-            const isOwner = config.OWNER_NUMBER.includes((mek.key.participant || mek.key.remoteJid || '').split('@')[0]);
+            const isOwner = mek.key.fromMe || config.OWNER_NUMBER.includes((mek.key.participant || mek.key.remoteJid || '').split('@')[0]);
             const sender = mek.key.participant || mek.key.remoteJid;
             const isGroup = from.endsWith('@g.us');
 
