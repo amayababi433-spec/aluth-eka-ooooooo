@@ -172,7 +172,18 @@ cmd({
         }
 
         if (state === 'BOT') {
-            const aiPrompt = `You are a human-like WhatsApp friend responding in Sinhala or Singlish. The user might send messages with spelling mistakes, broken Singlish, or half-complete words. Understand their true intent, ignore the typos, and reply naturally like a real friendly person in casual Sinhala. Keep the response concise and helpful. User message: ${body}`;
+            if (!userData.history) userData.history = [];
+            userData.history.push({ role: 'User', content: text });
+            if (userData.history.length > 8) userData.history.shift(); // Keep last 8 turns (4 interactions)
+
+            let historyText = userData.history.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+
+            const aiPrompt = `You are a human-like WhatsApp friend responding in Sinhala or Singlish. The user might send messages with spelling mistakes, broken Singlish, or half-complete words. Understand their true intent, ignore the typos, and reply naturally like a real friendly person in casual Sinhala. Keep the response concise and helpful. 
+
+Conversation History:
+${historyText}
+
+Bot:`;
             let aiReply = null;
             for (let i = 0; i < GEMINI_KEYS.length; i++) {
                 const currentKey = GEMINI_KEYS[i];
