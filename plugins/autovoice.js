@@ -101,6 +101,7 @@ cmd({
         // ?? OWNER BLOCK GUARD ??
         if (global.blockedUsersCache && global.blockedUsersCache.has(sender)) return;
 
+        if (mek.key.fromMe) return;
         if (!body || isGroup || !canReply(from) || voiceIndex.size === 0) return;
 
         const message = body.trim();

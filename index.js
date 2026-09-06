@@ -220,7 +220,7 @@ async function connectToWA() {
         try {
             mek = mek.messages[0];
             if (!mek.message) return;
-            if (mek.key.fromMe) return;
+            // Removed fromMe block so owner can use commands on bot number
 
             // ?? V7 POLL UPDATE FIX
             if (mek.message.pollUpdateMessage) {
