@@ -68,7 +68,21 @@ cmd({
         try {
             const axios = require('axios');
             const cheerio = require('cheerio');
-            const res = await axios.get(`https://tenor.com/search/${encodeURIComponent(q.replace(/ /g, '-'))}-gifs`);
+            
+            let searchTerm = q;
+            try {
+                // Use Gemini to translate Sinhala/Singlish into a short, exact 1-3 word English search term for Tenor
+                const geminiKey = Buffer.from("QVEuQWI4Uk42TDNhOTVxeUd1YU5fWGpLQUk0XzRCT2hmdU9XeVB4eUpGQXotN0JjMjJuSHc=", 'base64').toString('utf8');
+                const prompt = `Translate and summarize this request into a short 1-3 word English search term for finding a GIF. Request: "${q}". ONLY output the short English phrase.`;
+                const gRes = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`, {
+                    contents: [{ parts: [{ text: prompt }] }]
+                }, { timeout: 5000 });
+                const aiText = gRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (aiText) searchTerm = aiText.trim().replace(/[^a-zA-Z0-9 ]/g, '');
+                console.log("Sticker Search Term:", searchTerm);
+            } catch (e) { console.log("Gemini translation failed for .sticker"); }
+            const res = await axios.get(`https://tenor.com/search/${encodeURIComponent(searchTerm.replace(/ /g, '-'))}-gifs`);
+
             const $ = cheerio.load(res.data);
             
             let foundUrl = null;

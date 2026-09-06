@@ -30,37 +30,53 @@ async function deleteCommandMsg(conn, mek, from) {
     }
 }
 
-function getTargetJid(q, m, from) {
+function getTargetJids(q, m, from) {
+    let jids = [];
     if (m.quoted) {
-        return { jid: m.quoted.sender, isManual: false }; 
-    } else if (q) {
-        let num = q.replace(/[^0-9]/g, ''); 
-        if (num.length > 8) return { jid: num + "@s.whatsapp.net", isManual: true }; 
-    } else if (from && !from.includes('@g.us')) {
-        return { jid: from, isManual: false }; 
+        jids.push({ jid: m.quoted.sender, isManual: false });
     }
-    return { jid: null, isManual: false };
+    
+    if (q) {
+        const matches = q.match(/\d{9,}/g);
+        if (matches) {
+            matches.forEach(num => jids.push({ jid: num + "@s.whatsapp.net", isManual: true }));
+        }
+    }
+    
+    if (jids.length === 0 && from && !from.includes('@g.us')) {
+        jids.push({ jid: from, isManual: false });
+    }
+    return jids;
 }
 
 cmd({ pattern: "bclz", react: "🚫", desc: "Block as CLZ" }, async (conn, mek, m, { from, q, reply }) => {
     if (!isAuthorized(mek)) return;
     await deleteCommandMsg(conn, mek, from);
 
-    let target = getTargetJid(q, m, from);
-    if (!target.jid) return reply("⚠️ අංකයක් හමුවුණේ නෑ.");
+    let targets = getTargetJids(q, m, from);
+    if (targets.length === 0) return reply("⚠️ අංකයක් හමුවුණේ නෑ.");
     
     let botJid = conn.user.id.split(':')[0] + '@s.whatsapp.net';
-    if (target.jid === botJid || target.jid === PERSONAL_OWNER) return reply("❌ Bot ව හෝ Owner ව බ්ලොක් කරගන්න බෑ.");
 
     try {
         const db = await getBlockDB();
-        await db.updateOne({ _id: target.jid }, { $set: { category: "clz" } }, { upsert: true });
-        global.blockedUsersCache.set(target.jid, "clz");
+        let blockedNums = [];
+
+        for (let t of targets) {
+            if (t.jid === botJid || t.jid === PERSONAL_OWNER) continue;
+            await db.updateOne({ _id: t.jid }, { $set: { category: "clz" } }, { upsert: true });
+            global.blockedUsersCache.set(t.jid, "clz");
+            blockedNums.push(t.jid.split('@')[0]);
+        }
         
-        if (from !== target.jid) {
-            reply(`✅ Blocked Successfully!\nNumber: ${target.jid.split('@')[0]}\nCategory: CLZ`);
+        if (blockedNums.length > 0) {
+            if (targets.length === 1 && from === targets[0].jid && !targets[0].isManual) {
+                await conn.sendMessage(PERSONAL_OWNER, { text: `✅ Auto-Alert: ${blockedNums[0]} ව CLZ ලෙස Block කරන ලදී.` });
+            } else {
+                reply(`✅ Blocked Successfully!\nNumbers:\n${blockedNums.join('\n')}\nCategory: CLZ`);
+            }
         } else {
-            await conn.sendMessage(PERSONAL_OWNER, { text: `✅ Auto-Alert: ${target.jid.split('@')[0]} ව CLZ ලෙස Block කරන ලදී.` });
+            reply("❌ Bot ව හෝ Owner ව බ්ලොක් කරගන්න බෑ.");
         }
     } catch (e) { reply("❌ DB Error!"); }
 });
@@ -69,21 +85,30 @@ cmd({ pattern: "bfrnd", react: "🚫", desc: "Block as FRIEND" }, async (conn, m
     if (!isAuthorized(mek)) return;
     await deleteCommandMsg(conn, mek, from);
 
-    let target = getTargetJid(q, m, from);
-    if (!target.jid) return reply("⚠️ අංකයක් හමුවුණේ නෑ.");
+    let targets = getTargetJids(q, m, from);
+    if (targets.length === 0) return reply("⚠️ අංකයක් හමුවුණේ නෑ.");
     
     let botJid = conn.user.id.split(':')[0] + '@s.whatsapp.net';
-    if (target.jid === botJid || target.jid === PERSONAL_OWNER) return reply("❌ Bot ව හෝ Owner ව බ්ලොක් කරගන්න බෑ.");
 
     try {
         const db = await getBlockDB();
-        await db.updateOne({ _id: target.jid }, { $set: { category: "friend" } }, { upsert: true });
-        global.blockedUsersCache.set(target.jid, "friend");
+        let blockedNums = [];
+
+        for (let t of targets) {
+            if (t.jid === botJid || t.jid === PERSONAL_OWNER) continue;
+            await db.updateOne({ _id: t.jid }, { $set: { category: "friend" } }, { upsert: true });
+            global.blockedUsersCache.set(t.jid, "friend");
+            blockedNums.push(t.jid.split('@')[0]);
+        }
         
-        if (from !== target.jid) {
-            reply(`✅ Blocked Successfully!\nNumber: ${target.jid.split('@')[0]}\nCategory: FRIEND`);
+        if (blockedNums.length > 0) {
+            if (targets.length === 1 && from === targets[0].jid && !targets[0].isManual) {
+                await conn.sendMessage(PERSONAL_OWNER, { text: `✅ Auto-Alert: ${blockedNums[0]} ව FRIEND ලෙස Block කරන ලදී.` });
+            } else {
+                reply(`✅ Blocked Successfully!\nNumbers:\n${blockedNums.join('\n')}\nCategory: FRIEND`);
+            }
         } else {
-            await conn.sendMessage(PERSONAL_OWNER, { text: `✅ Auto-Alert: ${target.jid.split('@')[0]} ව FRIEND ලෙස Block කරන ලදී.` });
+            reply("❌ Bot ව හෝ Owner ව බ්ලොක් කරගන්න බෑ.");
         }
     } catch (e) { reply("❌ DB Error!"); }
 });
@@ -92,18 +117,25 @@ cmd({ pattern: "rmblock", react: "✅", desc: "Remove block" }, async (conn, mek
     if (!isAuthorized(mek)) return;
     await deleteCommandMsg(conn, mek, from);
 
-    let target = getTargetJid(q, m, from);
-    if (!target.jid) return reply("⚠️ අංකයක් හමුවුණේ නෑ.");
+    let targets = getTargetJids(q, m, from);
+    if (targets.length === 0) return reply("⚠️ කරුණාකර අංකයක් ලබාදෙන්න (උදා: .rmblock 9471XXXXXXX).");
 
     try {
         const db = await getBlockDB();
-        await db.deleteOne({ _id: target.jid });
-        global.blockedUsersCache.delete(target.jid);
+        let unblockedNums = [];
+
+        for (let t of targets) {
+            await db.deleteOne({ _id: t.jid });
+            global.blockedUsersCache.delete(t.jid);
+            unblockedNums.push(t.jid.split('@')[0]);
+        }
         
-        if (from !== target.jid) {
-            reply(`✅ Removed Block: ${target.jid.split('@')[0]}`);
-        } else {
-            await conn.sendMessage(PERSONAL_OWNER, { text: `✅ Auto-Alert: ${target.jid.split('@')[0]} ගේ Block එක ඉවත් කරන ලදී.` });
+        if (unblockedNums.length > 0) {
+            if (targets.length === 1 && from === targets[0].jid && !targets[0].isManual) {
+                await conn.sendMessage(PERSONAL_OWNER, { text: `✅ Auto-Alert: ${unblockedNums[0]} ගේ Block එක ඉවත් කරන ලදී.` });
+            } else {
+                reply(`✅ Removed Block for:\n${unblockedNums.join('\n')}`);
+            }
         }
     } catch (e) { reply("❌ DB Error!"); }
 });
