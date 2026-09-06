@@ -25,13 +25,13 @@ cmd({
 
         // 1. Use Gemini to convert ANY language / long text into a perfect Stable Diffusion prompt
         const geminiKey = Buffer.from(ENCODED_KEY, 'base64').toString('utf8');
-        const geminiPrompt = `The user wants to generate a high quality image. Their request: "${q}". 
+        const geminiPrompt = `The user wants to generate a high quality image. Their request is in Sinhala/Singlish (e.g. adana kollek = crying boy). Their request: "${q}". 
 Extract their intent and write a highly detailed, realistic, comma-separated English prompt for Stable Diffusion. 
 Make it beautiful and hyper-realistic. 
 DO NOT include any conversational text like "Here is the prompt", ONLY output the final prompt. Maximum 40 words.`;
 
         try {
-            const res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`, {
+            const res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
                 contents: [{ parts: [{ text: geminiPrompt }] }]
             }, { timeout: 8000 });
             const aiText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;

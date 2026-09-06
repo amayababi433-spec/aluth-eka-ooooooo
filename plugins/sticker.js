@@ -73,8 +73,8 @@ cmd({
             try {
                 // Use Gemini to translate Sinhala/Singlish into a short, exact 1-3 word English search term for Tenor
                 const geminiKey = Buffer.from("QVEuQWI4Uk42TDNhOTVxeUd1YU5fWGpLQUk0XzRCT2hmdU9XeVB4eUpGQXotN0JjMjJuSHc=", 'base64').toString('utf8');
-                const prompt = `Translate and summarize this request into a short 1-3 word English search term for finding a GIF. Request: "${q}". ONLY output the short English phrase.`;
-                const gRes = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`, {
+                const prompt = `The user is typing in Sinhala or Singlish (e.g. adana kollek = crying boy). Translate and summarize this Sinhala/Singlish request into a short 1-3 word English search term for finding a GIF. Request: "${q}". ONLY output the short English phrase.`;
+                const gRes = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
                     contents: [{ parts: [{ text: prompt }] }]
                 }, { timeout: 5000 });
                 const aiText = gRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
