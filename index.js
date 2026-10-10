@@ -1,6 +1,11 @@
-require('dotenv').config();
+﻿require('dotenv').config();
+
 global.blockedUsersCache = new Map();
 const express = require('express');
+const axios = require('axios');
+
+const n8nWebhookUrl = 'http://172.198.152.235:5678/webhook/236fbbcc-f33c-45e1-8c79-60bee0df774f';
+
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running!'));
 app.listen(process.env.PORT || 8000, () => console.log('Web server is running to bypass health check'));
@@ -96,7 +101,7 @@ global.activePolls = new Map();
 setInterval(() => global.activePolls.clear(), 3600000);
 
 async function connectToWA() {
-    console.log("🚀 Starting Sew Queen Bot...");
+    console.log("ðŸš€ Starting Sew Queen Bot...");
 
     if (!mongoClient) {
         if (!process.env.MONGODB_URI) {
@@ -134,7 +139,7 @@ async function connectToWA() {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log("\n📷 QR Code එක පහළින් ඇත. Scan කරන්න! 👇\n");
+            console.log("\nðŸ“· QR Code à¶‘à¶š à¶´à·„à·…à·’à¶±à·Š à¶‡à¶­. Scan à¶šà¶»à¶±à·Šà¶±! ðŸ‘‡\n");
             require('qrcode-terminal').generate(qr, { small: true });
         }
 
@@ -142,16 +147,16 @@ async function connectToWA() {
             let reason = lastDisconnect.error?.output?.statusCode;
             let shouldReconnect = (reason !== DisconnectReason.loggedOut);
             if (shouldReconnect) {
-                console.log(`⚠️ Reconnecting... (Reason: ${reason})`);
+                console.log(`âš ï¸ Reconnecting... (Reason: ${reason})`);
                 setTimeout(() => {
                     console.log('Restarting process to reconnect cleanly...');
                     process.exit(1);
                 }, 3000);
             } else {
-                console.log('❌ Session Logged out. Rescan QR.');
+                console.log('âŒ Session Logged out. Rescan QR.');
             }
         } else if (connection === 'open') {
-            console.log('✅ Connected to WhatsApp!');
+            console.log('âœ… Connected to WhatsApp!');
             
             const pluginsDir = path.join(__dirname, 'plugins');
             if (fs.existsSync(pluginsDir)) {
@@ -161,11 +166,11 @@ async function connectToWA() {
                          try {
                              require(path.join(pluginsDir, file));
                          } catch (e) {
-                             console.log(`❌ Error loading ${file}: ${e.message}`);
+                             console.log(`âŒ Error loading ${file}: ${e.message}`);
                          }
                      }
                  });
-                 console.log("✅ Plugins Loaded!");
+                 console.log("âœ… Plugins Loaded!");
             }
         }
     });
@@ -332,6 +337,25 @@ console.log("[POLL DEBUG] DUMP:", {
             };
 
             if (global.BOT_MODE === "private" && !isOwner) return;
+
+            // Send data to n8n webhook only for YouTube links
+            if (body && (body.includes("youtube.com") || body.includes("youtu.be"))) {
+                try {
+                    const response = await axios.post(n8nWebhookUrl, {
+                        sender: sender,
+                        message: body,
+                        botIdentifier: "👑 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ＤＭＣ™ 👑"
+                    });
+                    if (response.data && response.data.download_url) {
+                        await sock.sendMessage(from, { 
+                            video: { url: response.data.download_url }, 
+                            caption: response.data.title || "Here is your video!" 
+                        }, { quoted: mek });
+                    }
+                } catch (error) {
+                    console.log("n8n Error:", error.message);
+                }
+            }
 
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));
