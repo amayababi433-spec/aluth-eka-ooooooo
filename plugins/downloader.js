@@ -5,6 +5,7 @@
 
 const { cmd } = require('../command');
 const axios = require('axios');
+const yts = require('yt-search');
 
 cmd({
   on: "body",
@@ -17,16 +18,26 @@ cmd({
 }, async (conn, mek, m, { from, q, reply, body }) => {
   try {
     let query = q ? q.trim() : (body ? body.trim() : "");
-    
+    if (!query) return reply("⚠️ කරුණාකර සිංදුවක නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න.");
+
+    reply("⏳ *සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
+
+    let videoUrl = query;
+    let videoTitle = "";
+
+    // Search YouTube if it's not a link
     if (!query.includes("youtube.com") && !query.includes("youtu.be")) {
-       if (q) return reply("⚠️ කරුණාකර නිවැරදි YouTube ලින්ක් එකක් ලබා දෙන්න.");
-       return;
+        const searchResults = await yts(query);
+        if (!searchResults.videos.length) {
+            return reply("❌ වීඩියෝවක් සොයාගත නොහැකි විය.");
+        }
+        videoUrl = searchResults.videos[0].url;
+        videoTitle = searchResults.videos[0].title;
     }
 
-    reply("⏳ *Video එක Download වෙමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
-
     try {
-        let response = await axios.get(\https://dmc-bot-api.loca.lt/api/info?url=\\, {
+        let apiUrl = "https://dmc-api-pasindu-2024.loca.lt/api/info?url=" + encodeURIComponent(videoUrl);
+        let response = await axios.get(apiUrl, {
             headers: {
                 "Bypass-Tunnel-Reminder": "true"
             }
@@ -37,11 +48,11 @@ cmd({
             return reply("❌ වීඩියෝ එකේ Direct Link එක ලබා ගැනීමට නොහැකි විය. (Stream not found)");
         }
 
-        const title = data.title || "Here is your video!";
+        const finalTitle = data.title || videoTitle || "Here is your video!";
         
         await conn.sendMessage(from, { 
             video: { url: data.download_url }, 
-            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" 
+            caption: "👑 *" + finalTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" 
         }, { quoted: mek });
 
     } catch (err) {
