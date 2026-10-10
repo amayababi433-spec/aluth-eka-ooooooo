@@ -7,12 +7,11 @@ const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
 
-const API_ENDPOINT = 'https://dmc-api-pasindu-2024.loca.lt/api/info';
+const API_ENDPOINT = 'https://partners-approaches-limit-train.trycloudflare.com/api/info';
 
 // Helper to fetch video info from our Azure Playwright API
 async function fetchFromAzure(videoUrl) {
     const res = await axios.get(API_ENDPOINT + '?url=' + encodeURIComponent(videoUrl), {
-        headers: { 'Bypass-Tunnel-Reminder': 'true' },
         timeout: 45000
     });
     return res.data;
