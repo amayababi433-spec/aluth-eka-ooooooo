@@ -7,6 +7,7 @@ const { cmd } = require('../command');
 const axios = require('axios');
 
 cmd({
+  on: "body",
   pattern: "download",
   alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4"],
   react: "⏳",
@@ -15,12 +16,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { from, q, reply, args, sender, body }) => {
   try {
-    let query = q ? q.trim() : "";
-    if (!query) return reply("⚠️ YouTube ලින්ක් එකක් ලබා දෙන්න!");
+    let query = q ? q.trim() : (body ? body.trim() : "");
     
     // Check if it's a valid youtube link
     if (!query.includes("youtube.com") && !query.includes("youtu.be")) {
-       return reply("⚠️ කරුණාකර නිවැරදි YouTube ලින්ක් එකක් ලබා දෙන්න.");
+       // If it's a direct command like .video hi, show error. If it's just a normal chat message, silently ignore.
+       if (q) return reply("⚠️ කරුණාකර නිවැරදි YouTube ලින්ක් එකක් ලබා දෙන්න.");
+       return;
     }
 
     reply("⏳ *Video එක Download වෙමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
