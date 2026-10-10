@@ -1,6 +1,6 @@
 ﻿/**
  * 👑 DMC GOD MODE V53 (CRASH GUARD) 👑
- * LOGIC: Public REST APIs Fallback Chain
+ * LOGIC: Extreme Public REST APIs Fallback Chain
  */
 
 const { cmd } = require('../command');
@@ -27,32 +27,36 @@ cmd({
 
     let downloadUrl = null;
     let title = "Here is your video!";
-
-    // Method 1: Cobalt wuk.sh
-    if (!downloadUrl) {
-        try {
-            const res = await axios.post("https://co.wuk.sh/api/json", { url: query }, {
-                headers: { "Accept": "application/json", "Content-Type": "application/json" }
-            });
-            if (res.data && res.data.url) downloadUrl = res.data.url;
-        } catch (e) { console.error("Wuk API Failed"); }
-    }
-
-    // Method 2: Ryzendesu API
-    if (!downloadUrl) {
-        try {
-            const res = await axios.get("https://api.ryzendesu.vip/api/downloader/ytmp4?url=" + encodeURIComponent(query));
-            if (res.data && res.data.url) downloadUrl = res.data.url;
-        } catch (e) { console.error("Ryzendesu API Failed"); }
-    }
     
-    // Method 3: Siputzx API
-    if (!downloadUrl) {
+    const tryExtract = async () => {
+        // Method 1: Cobalt wuk.sh
         try {
-            const res = await axios.get("https://api.siputzx.my.id/api/d/ytmp4?url=" + encodeURIComponent(query));
-            if (res.data && res.data.data && res.data.data.dl) downloadUrl = res.data.data.dl;
-        } catch (e) { console.error("Siputzx API Failed"); }
-    }
+            const res = await axios.post("https://co.wuk.sh/api/json", { url: query }, { headers: { "Accept": "application/json", "Content-Type": "application/json" } });
+            if (res.data && res.data.url) return res.data.url;
+        } catch (e) {}
+
+        // Method 2: Vreden API
+        try {
+            const res = await axios.get("https://api.vreden.web.id/api/ytmp4?url=" + encodeURIComponent(query));
+            if (res.data && res.data.result && res.data.result.download && res.data.result.download.url) return res.data.result.download.url;
+        } catch (e) {}
+        
+        // Method 3: Gifted API
+        try {
+            const res = await axios.get("https://api.giftedtech.my.id/api/download/ytdl?apikey=gifted&url=" + encodeURIComponent(query));
+            if (res.data && res.data.result && res.data.result.url) return res.data.result.url;
+        } catch (e) {}
+
+        // Method 4: Yanzbotz API
+        try {
+            const res = await axios.get("https://api.yanzbotz.my.id/api/downloader/ytmp4?url=" + encodeURIComponent(query));
+            if (res.data && res.data.result && res.data.result.url) return res.data.result.url;
+        } catch (e) {}
+
+        return null;
+    };
+
+    downloadUrl = await tryExtract();
 
     if (downloadUrl) {
         await conn.sendMessage(from, { 
@@ -60,7 +64,7 @@ cmd({
             caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core_" 
         }, { quoted: mek });
     } else {
-        reply("❌ YouTube එකෙන් Video එක Download කිරීමට නොහැක. (Bot Protection / No APIs available)");
+        reply("❌ YouTube එකෙන් Video එක Download කිරීමට නොහැක. (Bot Protection / All APIs are blocked)");
     }
 
   } catch (e) {
