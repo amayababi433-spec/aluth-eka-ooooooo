@@ -54,7 +54,7 @@ cmd({
             return reply("❌ *වීඩියෝ එකේ Direct Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
         }
 
-        const title = data.title || searchTitle || "Song / Video";
+        const cleanTitle = (data.title && data.title !== "- YouTube" && data.title !== "YouTube") ? data.title : (searchTitle || "Song / Video");
         const cmdName = (command || "").toLowerCase();
         const isAudio = ["song", "play", "audio", "mp3"].includes(cmdName);
 
@@ -62,12 +62,12 @@ cmd({
             await conn.sendMessage(from, {
                 audio: { url: data.download_url },
                 mimetype: 'audio/mpeg',
-                fileName: title + '.mp3'
+                fileName: cleanTitle + '.mp3'
             }, { quoted: mek });
         } else {
             await conn.sendMessage(from, {
                 video: { url: data.download_url },
-                caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_"
+                caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_"
             }, { quoted: mek });
         }
 
