@@ -338,24 +338,7 @@ console.log("[POLL DEBUG] DUMP:", {
 
             if (global.BOT_MODE === "private" && !isOwner) return;
 
-            // Send data to n8n webhook only for YouTube links
-            if (body && (body.includes("youtube.com") || body.includes("youtu.be"))) {
-                try {
-                    const response = await axios.post(n8nWebhookUrl, {
-                        sender: sender,
-                        message: body,
-                        botIdentifier: "👑 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ＤＭＣ™ 👑"
-                    });
-                    if (response.data && response.data.download_url) {
-                        await sock.sendMessage(from, { 
-                            video: { url: response.data.download_url }, 
-                            caption: response.data.title || "Here is your video!" 
-                        }, { quoted: mek });
-                    }
-                } catch (error) {
-                    console.log("n8n Error:", error.message);
-                }
-            }
+            
 
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));

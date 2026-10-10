@@ -1,60 +1,54 @@
-/**
+﻿/**
  * 👑 DMC GOD MODE V53 (CRASH GUARD) 👑
- * LOGIC: Song Menu (Image Failed -> Text Fallback)
+ * LOGIC: n8n YouTube Downloader Integration
  */
 
 const { cmd } = require('../command');
-
-// Session Objects
-if (!global.pendingSessions) global.pendingSessions = {};
-if (!global.songSessions) global.songSessions = {};
+const axios = require('axios');
 
 cmd({
   pattern: "download",
   alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4"],
-  react: "☁️",
+  react: "⏳",
+  desc: "Download YouTube videos via n8n",
+  category: "download",
   filename: __filename
 }, async (conn, mek, m, { from, q, reply, args, sender, body }) => {
   try {
-    const textContent = (body || m.text || m.caption || "").trim();
-
-    // 1. SKIP IF REPLYING TO MENU (Handled in main.js)
-    if (global.pendingSessions[sender] && ["1", "2", "3"].includes(textContent)) return;
-    if (global.songSessions[sender] && ["1", "2"].includes(textContent)) return;
-
-    // 2. VALIDATE QUERY
     let query = q ? q.trim() : "";
-    if (!query) return reply("⚠️ Link හෝ නමක් ලබා දෙන්න!");
-
-    const commandName = body.split(" ")[0].toLowerCase().replace('.', '');
-    const isSongCommand = ['song', 'audio', 'play', 'mp3'].includes(commandName);
-
-    // 🅰️ SCENARIO A: SONG (Show Selection Menu) 🎵
-    if (isSongCommand) {
-      global.songSessions[sender] = { url: query, time: Date.now() };
-
-      const songMenu = `👑 *DMC MUSIC SELECTOR* 👑\n\n🎶 Song: "${query}"\n\nDownload ක්රමය තෝරන්න (Reply Number):\n\n` +
-        `1️⃣ *Direct Whatsapp File (Auto-Delete)* 🗑️\n` +
-        `2️⃣ *Google Drive Link (Save Data)* ☁️\n\n` +
-        `_Reply 1 or 2_`;
-
-      // පින්තූර අදින්න යන්නේ නැතුව කෙලින්ම Text එක යවමු (BSON සහ 440 Errors මගහරින්න)
-      return await conn.sendMessage(from, { text: songMenu }, { quoted: mek });
+    if (!query) return reply("⚠️ YouTube ලින්ක් එකක් ලබා දෙන්න!");
+    
+    // Check if it's a valid youtube link
+    if (!query.includes("youtube.com") && !query.includes("youtu.be")) {
+       return reply("⚠️ කරුණාකර නිවැරදි YouTube ලින්ක් එකක් ලබා දෙන්න.");
     }
 
-    // 🅱️ SCENARIO B: VIDEO (Quality Poll) 🎥
-    global.pendingSessions[sender] = { url: query, time: Date.now() };
+    reply("⏳ *Video එක Download වෙමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
-    const videoMenu = `👑 *DMC VIDEO SELECTOR* 👑\n\n🔎 Query: "${query}"\n\nVideo Quality එක තෝරන්න (Reply Number):\n\n` +
-      `1️⃣ *High Quality (HD)*\n` +
-      `2️⃣ *Medium (360p)*\n` +
-      `3️⃣ *Low Quality (Data Saver)*\n\n` +
-      `_Reply 1, 2, or 3_`;
+    const n8nWebhookUrl = 'http://172.198.152.235:5678/webhook/236fbbcc-f33c-45e1-8c79-60bee0df774f';
+    
+    try {
+        const response = await axios.post(n8nWebhookUrl, {
+            sender: sender,
+            message: query,
+            botIdentifier: "👑 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ＤＭＣ™ 👑"
+        });
 
-    return await conn.sendMessage(from, { text: videoMenu }, { quoted: mek });
+        if (response.data && response.data.download_url) {
+            await conn.sendMessage(from, { 
+                video: { url: response.data.download_url }, 
+                caption: "👑 *" + (response.data.title || "Here is your video!") + "* 👑\n\n_Downloaded via n8n Data Pipeline_" 
+            }, { quoted: mek });
+        } else {
+            reply("❌ n8n එකෙන් Video එක ලබා ගැනීමට නොහැකි විය. (No direct link found)");
+        }
+    } catch (err) {
+        console.error("n8n API Error:", err.message);
+        reply("❌ n8n සර්වර් එක සමග සම්බන්ධ වීමට නොහැක. Webhook URL එක නිවැරදිදැයි පරීක්ෂා කරන්න.");
+    }
 
   } catch (e) {
     console.error('Song/Video Downloader Error:', e.message);
-    reply('❌ සිංදුව හෝ වීඩියෝව බාගත කිරීමේදී දෝෂයක් ඇති විය. කරුණාකර පසුව නැවත උත්සාහ කරන්න.');
+    reply('❌ සිංදුව හෝ වීඩියෝව බාගත කිරීමේදී දෝෂයක් ඇති විය.');
   }
 });
