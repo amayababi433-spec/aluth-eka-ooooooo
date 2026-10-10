@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "sew-queen-md",
   "version": "6.0.0",
   "description": "WhatsApp Bot Fixed",
@@ -7,7 +7,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.13.5",
+    "@distube/ytdl-core": "^4.16.12",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "axios": "^1.6.0",
     "discord.js": "^14.25.1",

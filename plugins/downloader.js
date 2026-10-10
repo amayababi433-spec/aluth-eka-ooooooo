@@ -1,24 +1,23 @@
 ﻿/**
  * 👑 DMC GOD MODE V53 (CRASH GUARD) 👑
- * LOGIC: n8n YouTube Downloader Integration
+ * LOGIC: Native YouTube Downloader with play-dl
  */
 
 const { cmd } = require('../command');
-const axios = require('axios');
+const play = require('play-dl');
 
 cmd({
   on: "body",
   pattern: "download",
   alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4"],
   react: "⏳",
-  desc: "Download YouTube videos via n8n",
+  desc: "Download YouTube videos natively",
   category: "download",
   filename: __filename
-}, async (conn, mek, m, { from, q, reply, args, sender, body }) => {
+}, async (conn, mek, m, { from, q, reply, body }) => {
   try {
     let query = q ? q.trim() : (body ? body.trim() : "");
     
-    // Check if it's a valid youtube link
     if (!query.includes("youtube.com") && !query.includes("youtu.be")) {
        if (q) return reply("⚠️ කරුණාකර නිවැරදි YouTube ලින්ක් එකක් ලබා දෙන්න.");
        return;
@@ -26,30 +25,28 @@ cmd({
 
     reply("⏳ *Video එක Download වෙමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
-    const n8nWebhookUrl = 'http://172.198.152.235:80/webhook/236fbbcc-f33c-45e1-8c79-60bee0df774f';
-    
     try {
-        const response = await axios.post(n8nWebhookUrl, {
-            sender: sender,
-            message: query,
-            botIdentifier: "👑 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ＤＭＣ™ 👑"
-        });
+        let yt_info = await play.video_info(query);
+        let stream = await play.stream_from_info(yt_info, { quality: 1 }); 
+        // quality 1 means highest video quality that has audio, play-dl handles this well
 
-        if (response.data && response.data.download_url) {
-            await conn.sendMessage(from, { 
-                video: { url: response.data.download_url }, 
-                caption: "👑 *" + (response.data.title || "Here is your video!") + "* 👑\n\n_Downloaded via n8n Data Pipeline_" 
-            }, { quoted: mek });
-        } else {
-            reply("❌ n8n එකෙන් Video එක ලබා ගැනීමට නොහැකි විය. (No direct link found)");
+        if (!stream || !stream.url) {
+            return reply("❌ වීඩියෝ එකේ Direct Link එක ලබා ගැනීමට නොහැකි විය.");
         }
+
+        const title = yt_info.video_details.title || "Here is your video!";
+        
+        await conn.sendMessage(from, { 
+            video: { url: stream.url }, 
+            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core_" 
+        }, { quoted: mek });
+
     } catch (err) {
-        console.error("n8n API Error:", err.message);
-        reply("❌ n8n සර්වර් එක සමග සම්බන්ධ වීමට නොහැක. Webhook URL එක නිවැරදිදැයි පරීක්ෂා කරන්න.");
+        console.error("Play-DL Error:", err);
+        reply("❌ YouTube එකෙන් Video එක Download කිරීමට නොහැක. (Bot Protection / Restricted Video)");
     }
 
   } catch (e) {
     console.error('Song/Video Downloader Error:', e.message);
-    reply('❌ සිංදුව හෝ වීඩියෝව බාගත කිරීමේදී දෝෂයක් ඇති විය.');
   }
 });
