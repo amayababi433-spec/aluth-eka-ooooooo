@@ -1,10 +1,10 @@
 ﻿/**
  * 👑 DMC GOD MODE V53 (CRASH GUARD) 👑
- * LOGIC: Native yt-dlp via youtube-dl-exec
+ * LOGIC: Public REST APIs Fallback Chain
  */
 
 const { cmd } = require('../command');
-const youtubedl = require('youtube-dl-exec');
+const axios = require('axios');
 
 cmd({
   on: "body",
@@ -25,39 +25,42 @@ cmd({
 
     reply("⏳ *Video එක Download වෙමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
-    try {
-        const output = await youtubedl(query, {
-            dumpSingleJson: true,
-            noCheckCertificates: true,
-            noWarnings: true,
-            preferFreeFormats: true,
-            addHeader: [
-                'referer:youtube.com',
-                'user-agent:Mozilla/5.0'
-            ]
-        });
+    let downloadUrl = null;
+    let title = "Here is your video!";
 
-        if (output && output.url) {
-            await conn.sendMessage(from, { 
-                video: { url: output.url }, 
-                caption: "👑 *" + (output.title || "Here is your video!") + "* 👑\n\n_Downloaded via ＤＭＣ™ Core_" 
-            }, { quoted: mek });
-        } else if (output && output.formats && output.formats.length > 0) {
-            const format = output.formats.find(f => f.vcodec !== 'none' && f.acodec !== 'none') || output.formats.find(f => f.vcodec !== 'none');
-            if (format && format.url) {
-                await conn.sendMessage(from, { 
-                    video: { url: format.url }, 
-                    caption: "👑 *" + (output.title || "Here is your video!") + "* 👑\n\n_Downloaded via ＤＭＣ™ Core_" 
-                }, { quoted: mek });
-            } else {
-                reply("❌ වීඩියෝ එකේ Direct Link එක ලබා ගැනීමට නොහැකි විය.");
-            }
-        } else {
-            reply("❌ වීඩියෝ එකේ Direct Link එක ලබා ගැනීමට නොහැකි විය.");
-        }
-    } catch (err) {
-        console.error("YTDL Error:", err.message);
-        reply("❌ YouTube එකෙන් Video එක Download කිරීමට නොහැක. (Bot Protection / Restricted Video)");
+    // Method 1: Cobalt wuk.sh
+    if (!downloadUrl) {
+        try {
+            const res = await axios.post("https://co.wuk.sh/api/json", { url: query }, {
+                headers: { "Accept": "application/json", "Content-Type": "application/json" }
+            });
+            if (res.data && res.data.url) downloadUrl = res.data.url;
+        } catch (e) { console.error("Wuk API Failed"); }
+    }
+
+    // Method 2: Ryzendesu API
+    if (!downloadUrl) {
+        try {
+            const res = await axios.get("https://api.ryzendesu.vip/api/downloader/ytmp4?url=" + encodeURIComponent(query));
+            if (res.data && res.data.url) downloadUrl = res.data.url;
+        } catch (e) { console.error("Ryzendesu API Failed"); }
+    }
+    
+    // Method 3: Siputzx API
+    if (!downloadUrl) {
+        try {
+            const res = await axios.get("https://api.siputzx.my.id/api/d/ytmp4?url=" + encodeURIComponent(query));
+            if (res.data && res.data.data && res.data.data.dl) downloadUrl = res.data.data.dl;
+        } catch (e) { console.error("Siputzx API Failed"); }
+    }
+
+    if (downloadUrl) {
+        await conn.sendMessage(from, { 
+            video: { url: downloadUrl }, 
+            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core_" 
+        }, { quoted: mek });
+    } else {
+        reply("❌ YouTube එකෙන් Video එක Download කිරීමට නොහැක. (Bot Protection / No APIs available)");
     }
 
   } catch (e) {
