@@ -1,66 +1,113 @@
-﻿/**
- * 👑 DMC GOD MODE V53 (CRASH GUARD) 👑
- * LOGIC: Native YouTube Downloader with Custom Azure Playwright API
+/**
+ * 👑 DMC GOD MODE V53 (CRASH GUARD & ANTI-SPAM) 👑
+ * LOGIC: Native YouTube Downloader with Azure Playwright Engine
  */
 
 const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
 
+const API_ENDPOINT = 'https://dmc-api-pasindu-2024.loca.lt/api/info';
+
+// Helper to fetch video info from our Azure Playwright API
+async function fetchFromAzure(videoUrl) {
+    const res = await axios.get(API_ENDPOINT + '?url=' + encodeURIComponent(videoUrl), {
+        headers: { 'Bypass-Tunnel-Reminder': 'true' },
+        timeout: 45000
+    });
+    return res.data;
+}
+
+// 1. COMMAND HANDLER (.song, .video, .play, .yt, .mp3, .mp4, etc.)
 cmd({
-  on: "body",
-  pattern: "download",
-  alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4"],
-  react: "⏳",
-  desc: "Download YouTube videos natively",
-  category: "download",
-  filename: __filename
-}, async (conn, mek, m, { from, q, reply, body }) => {
-  try {
-    let query = q ? q.trim() : (body ? body.trim() : "");
-    if (!query) return reply("⚠️ කරුණාකර සිංදුවක නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න.");
-
-    reply("⏳ *සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
-
-    let videoUrl = query;
-    let videoTitle = "";
-
-    // Search YouTube if it's not a link
-    if (!query.includes("youtube.com") && !query.includes("youtu.be")) {
-        const searchResults = await yts(query);
-        if (!searchResults.videos.length) {
-            return reply("❌ වීඩියෝවක් සොයාගත නොහැකි විය.");
-        }
-        videoUrl = searchResults.videos[0].url;
-        videoTitle = searchResults.videos[0].title;
-    }
-
+    pattern: "download",
+    alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4"],
+    react: "🎵",
+    desc: "Download YouTube audio or video",
+    category: "download",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply, prefix, command }) => {
     try {
-        let apiUrl = "https://dmc-api-pasindu-2024.loca.lt/api/info?url=" + encodeURIComponent(videoUrl);
-        let response = await axios.get(apiUrl, {
-            headers: {
-                "Bypass-Tunnel-Reminder": "true"
-            }
-        });
-        
-        let data = response.data;
-        if (!data || !data.download_url) {
-            return reply("❌ වීඩියෝ එකේ Direct Link එක ලබා ගැනීමට නොහැකි විය. (Stream not found)");
+        if (mek.key.fromMe) return; // Prevent self-trigger loop
+
+        let query = q ? q.trim() : "";
+        if (!query) {
+            return reply("⚠️ *කරුණාකර නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*." + (command || 'song') + " mihirawi*\n*." + (command || 'song') + " https://youtu.be/...*");
         }
 
-        const finalTitle = data.title || videoTitle || "Here is your video!";
-        
-        await conn.sendMessage(from, { 
-            video: { url: data.download_url }, 
-            caption: "👑 *" + finalTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" 
+        await reply("⏳ *සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
+
+        let targetUrl = query;
+        let searchTitle = "";
+
+        // If not a direct YouTube URL, search YouTube
+        if (!query.includes("youtube.com") && !query.includes("youtu.be")) {
+            const searchResults = await yts(query);
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
+                return reply("❌ *වීඩියෝවක් සොයාගත නොහැකි විය.*");
+            }
+            targetUrl = searchResults.videos[0].url;
+            searchTitle = searchResults.videos[0].title;
+        }
+
+        const data = await fetchFromAzure(targetUrl);
+        if (!data || !data.download_url) {
+            return reply("❌ *වීඩියෝ එකේ Direct Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
+        }
+
+        const title = data.title || searchTitle || "Song / Video";
+        const cmdName = (command || "").toLowerCase();
+        const isAudio = ["song", "play", "audio", "mp3"].includes(cmdName);
+
+        if (isAudio) {
+            await conn.sendMessage(from, {
+                audio: { url: data.download_url },
+                mimetype: 'audio/mpeg',
+                fileName: title + '.mp3'
+            }, { quoted: mek });
+        } else {
+            await conn.sendMessage(from, {
+                video: { url: data.download_url },
+                caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_"
+            }, { quoted: mek });
+        }
+
+    } catch (err) {
+        console.error("Downloader Error:", err.message);
+        reply("❌ *YouTube වෙතින් Download කිරීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.*");
+    }
+});
+
+// 2. PASSIVE LISTENER: ONLY for direct YouTube links pasted without prefix
+cmd({
+    on: "body"
+}, async (conn, mek, m, { from, body, reply }) => {
+    try {
+        if (!body || mek.key.fromMe) return; // Never trigger on own messages
+
+        const trimmed = body.trim();
+        // Strict regex: Message must ONLY be a YouTube link (preventing spam on regular conversations)
+        const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]+(\S*)?$/i;
+        if (!ytRegex.test(trimmed)) return;
+
+        // Ignore if user typed a command like .song http://...
+        if (trimmed.startsWith('.') || trimmed.startsWith('!') || trimmed.startsWith('/')) return;
+
+        await reply("⏳ *YouTube ලින්ක් එක හඳුනාගන්නා ලදී. Download වෙමින් පවතී...*");
+
+        const data = await fetchFromAzure(trimmed);
+        if (!data || !data.download_url) {
+            return reply("❌ *Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
+        }
+
+        const title = data.title || "YouTube Video";
+
+        await conn.sendMessage(from, {
+            video: { url: data.download_url },
+            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_"
         }, { quoted: mek });
 
     } catch (err) {
-        console.error("API Error:", err.message);
-        reply("❌ YouTube එකෙන් Video එක Download කිරීමට නොහැක. (Bot Protection / Restricted Video)");
+        console.error("Auto YouTube link error:", err.message);
     }
-
-  } catch (e) {
-    console.error('Song/Video Downloader Error:', e.message);
-  }
 });
