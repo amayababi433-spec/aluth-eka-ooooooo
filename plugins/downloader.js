@@ -27,7 +27,7 @@ cmd({
 
     reply("⏳ *Video එක Download වෙමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
-    const n8nWebhookUrl = 'http://172.198.152.235:5678/webhook/236fbbcc-f33c-45e1-8c79-60bee0df774f';
+    const n8nWebhookUrl = 'http://172.198.152.235/webhook/236fbbcc-f33c-45e1-8c79-60bee0df774f';
     
     try {
         const response = await axios.post(n8nWebhookUrl, {
