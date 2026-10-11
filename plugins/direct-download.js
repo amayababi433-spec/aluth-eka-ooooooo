@@ -112,7 +112,7 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
         await reply("⏳ *TeraBox ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
         const res = await axios.get(TERABOX_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 60000
+            timeout: 90000
         });
 
         if (!res.data || !res.data.download_url) {
@@ -127,25 +127,31 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
         await reply("🚀 *TeraBox වීඩියෝව සූදානම් (" + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "). WhatsApp වෙත එවමින් පවතී...*");
 
         // Smart Size Guard routing
-        if (sizeMB > 100) {
-            // Send as Document if > 100MB
-            await conn.sendMessage(from, {
-                document: { url: data.download_url },
-                mimetype: 'video/mp4',
-                fileName: fileName,
-                caption: "👑 *TeraBox Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
-            }, { quoted: mek });
-        } else {
-            // Send as Video if <= 100MB
-            await conn.sendMessage(from, {
-                video: { url: data.download_url },
-                mimetype: 'video/mp4',
-                caption: "👑 *TeraBox Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
-            }, { quoted: mek });
+        try {
+            if (sizeMB > 100) {
+                // Send as Document if > 100MB
+                await conn.sendMessage(from, {
+                    document: { url: data.download_url },
+                    mimetype: 'video/mp4',
+                    fileName: fileName,
+                    caption: "👑 *TeraBox Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                }, { quoted: mek });
+            } else {
+                // Send as Video if <= 100MB
+                await conn.sendMessage(from, {
+                    video: { url: data.download_url },
+                    mimetype: 'video/mp4',
+                    caption: "👑 *TeraBox Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                }, { quoted: mek });
+            }
+        } catch (sendErr) {
+            console.error("TeraBox WhatsApp Send Error:", sendErr.message);
+            reply("❌ *WhatsApp වෙත වීඩියෝව යැවීමේදී දෝෂයක් සිදු විය: " + sendErr.message + "*");
         }
     } catch (err) {
         console.error("TeraBox download error:", err.message);
-        reply("❌ *TeraBox වීඩියෝව බාගත කිරීමේදී දෝෂයක් සිදු විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.*");
+        const errMsg = err.response?.data?.error || err.message;
+        reply("❌ *TeraBox වීඩියෝව ලබා ගැනීමේ දෝෂයක් සිදු විය: " + errMsg + "*");
     }
 }
 
