@@ -105,6 +105,7 @@ function extractVideoFromHtml(html) {
 }
 
 const TERABOX_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
+const DISKWALA_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
 
 // Dedicated TeraBox download handler using Azure Playwright Cloud Engine
 async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
@@ -155,6 +156,55 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
     }
 }
 
+// Dedicated DiskWala download handler using Azure Playwright Cloud Engine
+async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
+    try {
+        await reply("⏳ *DiskWala ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
+
+        const res = await axios.get(DISKWALA_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+            timeout: 110000
+        });
+
+        if (!res.data || !res.data.download_url) {
+            return reply("❌ *DiskWala වීඩියෝව ලබා ගැනීමට නොහැකි විය: " + (res.data?.error || 'URL not found') + "*");
+        }
+
+        const data = res.data;
+        const title = data.title || "DiskWala Video";
+        const sizeMB = (data.size_bytes || 0) / (1024 * 1024);
+        const fileName = title.endsWith('.mp4') ? title : (title + '.mp4');
+
+        await reply("🚀 *DiskWala වීඩියෝව සූදානම් (" + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "). WhatsApp වෙත එවමින් පවතී...*");
+
+        // Smart Size Guard routing
+        try {
+            if (sizeMB > 100) {
+                // Send as Document if > 100MB
+                await conn.sendMessage(from, {
+                    document: { url: data.download_url },
+                    mimetype: 'video/mp4',
+                    fileName: fileName,
+                    caption: "👑 *DiskWala Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                }, { quoted: mek });
+            } else {
+                // Send as Video if <= 100MB
+                await conn.sendMessage(from, {
+                    video: { url: data.download_url },
+                    mimetype: 'video/mp4',
+                    caption: "👑 *DiskWala Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                }, { quoted: mek });
+            }
+        } catch (sendErr) {
+            console.error("DiskWala WhatsApp Send Error:", sendErr.message);
+            reply("❌ *WhatsApp වෙත වීඩියෝව යැවීමේදී දෝෂයක් සිදු විය: " + sendErr.message + "*");
+        }
+    } catch (err) {
+        console.error("DiskWala download error:", err.message);
+        const errMsg = err.response?.data?.error || err.message;
+        reply("❌ *DiskWala වීඩියෝව ලබා ගැනීමේ දෝෂයක් සිදු විය: " + errMsg + "*");
+    }
+}
+
 // Reusable download and stream handler
 async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     let targetUrl = rawUrl.trim();
@@ -163,6 +213,12 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     const isTeraBox = /terabox(app)?\.com|1024terabox\.com|teraboxshare\.com|nephobox\.com|4funbox\.com|mirrobox\.com|1024tera\.com/i.test(targetUrl);
     if (isTeraBox) {
         return handleTeraBoxDownload(conn, mek, from, targetUrl, reply);
+    }
+
+    // 0.1 Check for DiskWala links
+    const isDiskWala = /diskwala\.com/i.test(targetUrl);
+    if (isDiskWala) {
+        return handleDiskwalaDownload(conn, mek, from, targetUrl, reply);
     }
 
     // 1. Resolve videy.co page links to direct CDN stream
@@ -341,7 +397,7 @@ cmd({
 
         let query = q ? q.trim() : "";
         if (!query) {
-            return reply("⚠️ *කරුණාකර සෘජු වීඩියෝ ලින්ක් එකක් (Direct .mp4) හෝ TeraBox ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*.dl https://cdn2.videy.co/...mp4*\n*.dl https://1024terabox.com/s/...*");
+            return reply("⚠️ *කරුණාකර සෘජු වීඩියෝ ලින්ක් එකක් (Direct .mp4), TeraBox හෝ DiskWala ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*.dl https://cdn2.videy.co/...mp4*\n*.dl https://1024terabox.com/s/...*\n*.dl https://www.diskwala.com/app/...*");
         }
 
         // Ignore YouTube links here (handled by YouTube downloader)
@@ -379,8 +435,9 @@ cmd({
         const isVidey = trimmed.includes('videy.co') || trimmed.includes('videyc.pw');
         const isDirectVideo = VIDEO_EXT_REGEX.test(trimmed);
         const isTeraBox = /terabox(app)?\.com|1024terabox\.com|teraboxshare\.com|nephobox\.com|4funbox\.com|mirrobox\.com|1024tera\.com/i.test(trimmed);
+        const isDiskWala = /diskwala\.com/i.test(trimmed);
 
-        if (isVidey || isDirectVideo || isTeraBox) {
+        if (isVidey || isDirectVideo || isTeraBox || isDiskWala) {
             await handleDirectDownload(conn, mek, from, trimmed, reply);
         }
     } catch (err) {
