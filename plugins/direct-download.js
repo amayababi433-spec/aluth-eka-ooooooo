@@ -1,10 +1,11 @@
 /**
- * 👑 DMC DIRECT WEB VIDEO DOWNLOADER (CRASH GUARD & FAKE LINK DETECTION) 👑
+ * 👑 DMC DIRECT WEB VIDEO DOWNLOADER (CRASH GUARD & SMART GATEWAY EXTRACTOR) 👑
  * LOGIC: Multi-layered verification for Direct Internet Video Links:
- *        1. HTTP HEAD verification (MIME types, redirects, size guard)
- *        2. Magic Bytes Sniffing (Initial bytes inspection to block fake .mp4 web pages)
- *        3. Smart Size Guard (Inline Video vs Document, max 300MB)
- *        4. 100% Isolated from YouTube Downloader Core Logic
+ *        1. Intelligent HTML Gate / Redirect Page extraction (Extracts hidden real video links)
+ *        2. HTTP HEAD verification (MIME types, redirects, size guard)
+ *        3. Magic Bytes Sniffing (Initial bytes inspection to verify genuine video signatures)
+ *        4. Smart Size Guard (Inline Video vs Document, max 300MB)
+ *        5. 100% Isolated from YouTube Downloader Core Logic
  */
 
 const { cmd } = require('../command');
@@ -32,7 +33,7 @@ function inspectMagicBytes(buffer) {
     if (sample.startsWith('<!doctype') || sample.startsWith('<html') ||
         sample.includes('<head') || sample.includes('<script') ||
         sample.includes('window.location') || sample.includes('<?php')) {
-        return { isVideo: false, reason: 'HTML Web Page / Phishing Page' };
+        return { isVideo: false, reason: 'HTML Web Page' };
     }
 
     // MP4 / MOV / 3GP (usually has 'ftyp' at bytes 4-8)
@@ -69,6 +70,40 @@ function inspectMagicBytes(buffer) {
     return { isVideo: false, reason: 'Unrecognized video file signature' };
 }
 
+/**
+ * Intelligent HTML Video Link Extractor:
+ * Extracts hidden video links embedded in intermediate gate pages or player pages.
+ */
+function extractVideoFromHtml(html) {
+    if (!html || typeof html !== 'string') return null;
+
+    // 1. JavaScript variable: targetUrl = "..." or videoUrl = "..."
+    const targetMatch = html.match(/(?:targetUrl|target_url|videoUrl|video_url|videoSrc|fileUrl)\s*[:=]\s*["']([^"']+)["']/i);
+    if (targetMatch) {
+        return targetMatch[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+    }
+
+    // 2. HTML5 <video> or <source> tags
+    const tagMatch = html.match(/<(?:video|source)[^>]+src=["']([^"']+)["']/i);
+    if (tagMatch) {
+        return tagMatch[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+    }
+
+    // 3. window.location or location.href redirects
+    const locMatch = html.match(/(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']/i);
+    if (locMatch && !locMatch[1].includes('window.location')) {
+        return locMatch[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+    }
+
+    // 4. Any direct mp4, webm, mov, mkv url in the HTML
+    const generalMatch = html.match(/https?:\/\/[^"'<>\s]+\.(mp4|webm|mov|mkv)(\?[^"'<>\s]*)?/i);
+    if (generalMatch) {
+        return generalMatch[0].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+    }
+
+    return null;
+}
+
 // Reusable download and stream handler
 async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     let targetUrl = rawUrl.trim();
@@ -89,7 +124,7 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     await reply("⏳ *Direct Video Link හඳුනාගන්නා ලදී. Crash Guard පරීක්ෂාව සිදු වෙමින් පවතී...*");
 
     // ----------------------------------------------------
-    // LAYER 1: Enhanced HTTP HEAD Pre-check
+    // LAYER 1: Enhanced HTTP HEAD Pre-check & Gateway Extractor
     // ----------------------------------------------------
     let contentType = '';
     let fileSizeMB = 0;
@@ -131,9 +166,38 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
         }
     }
 
-    // 1.1 Strict check against fake HTML / JSON / API responses
+    // 1.1 If it's an HTML / Web page, inspect the page to extract underlying real video URL!
     if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('text/plain')) {
-        return reply("❌ *මෙම ලින්ක් එක සැබෑ Video එකක් නොවේ (ව්‍යාජ / Web Page හෝ Phishing ලින්ක් එකකි).*\n\n_ලින්ක් එක අගට .mp4 තිබුණද, සේවාදායකය (Server) විසින් ලබා දෙන්නේ වෙබ් පිටුවක් (HTML) පමණි._");
+        try {
+            const pageRes = await axios.get(targetUrl, {
+                timeout: 8000,
+                maxRedirects: 5,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            });
+
+            const extractedVideoUrl = extractVideoFromHtml(pageRes.data);
+            if (extractedVideoUrl && extractedVideoUrl !== targetUrl) {
+                targetUrl = extractedVideoUrl;
+                try { sourceDomain = new URL(targetUrl).hostname; } catch (e) { }
+
+                // Re-verify headers of the newly extracted genuine video URL
+                const realHead = await axios.head(targetUrl, {
+                    timeout: 5000,
+                    maxRedirects: 5,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    validateStatus: (s) => s >= 200 && s < 400
+                });
+
+                contentType = realHead.headers['content-type'] ? realHead.headers['content-type'].toLowerCase() : 'video/mp4';
+                const realLen = parseInt(realHead.headers['content-length'] || '0', 10);
+                fileSizeMB = realLen / (1024 * 1024);
+            } else {
+                return reply("❌ *මෙම ලින්ක් එක සැබෑ Video එකක් නොවේ (ව්‍යාජ / Web Page හෝ Phishing ලින්ක් එකකි).*\n\n_ලින්ක් එක අගට .mp4 තිබුණද, සේවාදායකය (Server) විසින් ලබා දෙන්නේ වෙබ් පිටුවක් (HTML) පමණි._");
+            }
+        } catch (extractErr) {
+            console.error("HTML Extraction Error:", extractErr.message);
+            return reply("❌ *මෙම ලින්ක් එක සැබෑ Video එකක් නොවේ (ව්‍යාජ / Web Page හෝ Phishing ලින්ක් එකකි).*");
+        }
     }
 
     // ----------------------------------------------------
@@ -160,7 +224,6 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
 
     } catch (sniffErr) {
         console.error("Magic bytes sniffing error:", sniffErr.message);
-        // If server strictly rejects range header or throws error, we proceed cautiously only if contentType is explicit video
         const isExplicitVideo = VALID_VIDEO_MIME_TYPES.some(t => contentType.includes(t));
         if (!isExplicitVideo) {
             return reply("❌ *වීඩියෝවේ සත්‍යතාව තහවුරු කළ නොහැකි විය (Signature check failed).*");
