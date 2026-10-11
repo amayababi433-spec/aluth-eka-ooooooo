@@ -7,7 +7,7 @@ const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
 
-const API_ENDPOINT = 'https://partners-approaches-limit-train.trycloudflare.com/api/info';
+const API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
 
 // Helper to fetch video info from our Azure Playwright API
 async function fetchFromAzure(videoUrl) {
