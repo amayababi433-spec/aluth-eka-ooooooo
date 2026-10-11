@@ -112,7 +112,7 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
         await reply("⏳ *TeraBox ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
         const res = await axios.get(TERABOX_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 90000
+            timeout: 110000
         });
 
         if (!res.data || !res.data.download_url) {
