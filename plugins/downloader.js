@@ -74,22 +74,39 @@ cmd({
             searchTitle = searchResults.videos[0].title;
         }
 
-        // Fetch video stream from Azure
-        const data = await fetchFromAzure(targetUrl, 'video');
+        const isAudioOnly = (command === 'mp3' || command === 'audio');
+        const fetchType = isAudioOnly ? 'audio' : 'video';
+
+        // Fetch stream from Azure
+        const data = await fetchFromAzure(targetUrl, fetchType);
         if (!data || !data.download_url) {
-            return reply("❌ *වීඩියෝ එකේ Direct Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
+            return reply("❌ *Direct Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
         }
 
-        const cleanTitle = (data.title && data.title !== "- YouTube" && data.title !== "YouTube") ? data.title : (searchTitle || "Video");
+        const cleanTitle = (data.title && data.title !== "- YouTube" && data.title !== "YouTube") ? data.title : (searchTitle || (isAudioOnly ? "Audio Track" : "Video"));
+
+        if (isAudioOnly) {
+            await conn.sendMessage(from, {
+                audio: { url: data.download_url },
+                mimetype: 'audio/mpeg',
+                fileName: cleanTitle + '.mp3',
+                ptt: false
+            }, { quoted: mek });
+            return;
+        }
+
+        // Extract bot number for 1-Tap Link
+        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
 
         // Embed invisible secret payload for Swipe-to-MP3
         const secretCode = encodeInvisible("DMC_AUDIO:" + targetUrl);
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
+        const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
 
-        // Send Video with stylish Swipe prompt
+        // Send Video with stylish Swipe prompt and 1-Tap link
         await conn.sendMessage(from, {
             video: { url: data.download_url },
-            caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt
+            caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt + oneTapPrompt
         }, { quoted: mek });
 
     } catch (err) {
@@ -151,12 +168,14 @@ cmd({
         }
 
         const title = data.title || "YouTube Video";
+        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
         const secretCode = encodeInvisible("DMC_AUDIO:" + trimmed);
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
+        const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
 
         await conn.sendMessage(from, {
             video: { url: data.download_url },
-            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt
+            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt + oneTapPrompt
         }, { quoted: mek });
 
     } catch (err) {
