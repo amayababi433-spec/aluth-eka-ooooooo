@@ -104,9 +104,60 @@ function extractVideoFromHtml(html) {
     return null;
 }
 
+const TERABOX_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
+
+// Dedicated TeraBox download handler using Azure Playwright Cloud Engine
+async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
+    try {
+        await reply("⏳ *TeraBox ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
+
+        const res = await axios.get(TERABOX_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+            timeout: 60000
+        });
+
+        if (!res.data || !res.data.download_url) {
+            return reply("❌ *TeraBox වීඩියෝව ලබා ගැනීමට නොහැකි විය.*");
+        }
+
+        const data = res.data;
+        const title = data.title || "TeraBox Video";
+        const sizeMB = (data.size_bytes || 0) / (1024 * 1024);
+        const fileName = title.endsWith('.mp4') ? title : (title + '.mp4');
+
+        await reply("🚀 *TeraBox වීඩියෝව සූදානම් (" + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "). WhatsApp වෙත එවමින් පවතී...*");
+
+        // Smart Size Guard routing
+        if (sizeMB > 100) {
+            // Send as Document if > 100MB
+            await conn.sendMessage(from, {
+                document: { url: data.download_url },
+                mimetype: 'video/mp4',
+                fileName: fileName,
+                caption: "👑 *TeraBox Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+            }, { quoted: mek });
+        } else {
+            // Send as Video if <= 100MB
+            await conn.sendMessage(from, {
+                video: { url: data.download_url },
+                mimetype: 'video/mp4',
+                caption: "👑 *TeraBox Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+            }, { quoted: mek });
+        }
+    } catch (err) {
+        console.error("TeraBox download error:", err.message);
+        reply("❌ *TeraBox වීඩියෝව බාගත කිරීමේදී දෝෂයක් සිදු විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.*");
+    }
+}
+
 // Reusable download and stream handler
 async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     let targetUrl = rawUrl.trim();
+
+    // 0. Check for TeraBox links
+    const isTeraBox = /terabox(app)?\.com|1024terabox\.com|teraboxshare\.com|nephobox\.com|4funbox\.com|mirrobox\.com|1024tera\.com/i.test(targetUrl);
+    if (isTeraBox) {
+        return handleTeraBoxDownload(conn, mek, from, targetUrl, reply);
+    }
 
     // 1. Resolve videy.co page links to direct CDN stream
     if (targetUrl.includes('videy.co/v?id=')) {
@@ -284,7 +335,7 @@ cmd({
 
         let query = q ? q.trim() : "";
         if (!query) {
-            return reply("⚠️ *කරුණාකර සෘජු වීඩියෝ ලින්ක් එකක් (Direct .mp4 Link) ලබා දෙන්න!*\n\nඋදාහරණ:\n*.dl https://cdn2.videy.co/...mp4*\n*.dl https://videy.co/v?id=...*");
+            return reply("⚠️ *කරුණාකර සෘජු වීඩියෝ ලින්ක් එකක් (Direct .mp4) හෝ TeraBox ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*.dl https://cdn2.videy.co/...mp4*\n*.dl https://1024terabox.com/s/...*");
         }
 
         // Ignore YouTube links here (handled by YouTube downloader)
@@ -321,8 +372,9 @@ cmd({
 
         const isVidey = trimmed.includes('videy.co') || trimmed.includes('videyc.pw');
         const isDirectVideo = VIDEO_EXT_REGEX.test(trimmed);
+        const isTeraBox = /terabox(app)?\.com|1024terabox\.com|teraboxshare\.com|nephobox\.com|4funbox\.com|mirrobox\.com|1024tera\.com/i.test(trimmed);
 
-        if (isVidey || isDirectVideo) {
+        if (isVidey || isDirectVideo || isTeraBox) {
             await handleDirectDownload(conn, mek, from, trimmed, reply);
         }
     } catch (err) {
