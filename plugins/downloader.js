@@ -45,21 +45,39 @@ function decodeInvisible(str) {
 // 1. COMMAND HANDLER (.song, .video, .play, .yt, .mp3, .mp4, etc.)
 cmd({
     pattern: "download",
-    alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4"],
+    alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4", "yta", "ytaudio"],
     react: "🎬",
     desc: "Download YouTube audio or video",
     category: "download",
     filename: __filename
-}, async (conn, mek, m, { from, q, reply, prefix, command }) => {
+}, async (conn, mek, m, { from, q, reply, prefix, command, body }) => {
     try {
         if (mek.key.fromMe) return; // Prevent self-trigger loop
 
+        const cmdName = (command || (body && body.startsWith('.') ? body.slice(1).trim().split(' ')[0].toLowerCase() : '')).toLowerCase();
+        const isAudioOnly = (cmdName === 'mp3' || cmdName === 'audio' || cmdName === 'yta' || cmdName === 'ytaudio');
+
         let query = q ? q.trim() : "";
         if (!query) {
-            return reply("⚠️ *කරුණාකර නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*." + (command || 'video') + " bowitiya mal*\n*." + (command || 'video') + " https://youtu.be/...*");
+            // Check if user quoted a video with secret audio code or a YouTube URL
+            const quoted = mek?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            if (quoted) {
+                const quotedCaption = quoted?.videoMessage?.caption || quoted?.extendedTextMessage?.text || quoted?.conversation || "";
+                const secretPayload = decodeInvisible(quotedCaption);
+                if (secretPayload && secretPayload.startsWith("DMC_AUDIO:")) {
+                    query = secretPayload.replace("DMC_AUDIO:", "").trim();
+                } else {
+                    const ytMatch = quotedCaption.match(/(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]+(\S*)?/i);
+                    if (ytMatch) query = ytMatch[0];
+                }
+            }
         }
 
-        await reply("⏳ *සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
+        if (!query) {
+            return reply("⚠️ *කරුණාකර නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*." + (cmdName || 'video') + " bowitiya mal*\n*." + (cmdName || 'video') + " https://youtu.be/...*");
+        }
+
+        await reply(isAudioOnly ? "⏳ *Audio සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*" : "⏳ *සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
         let targetUrl = query;
         let searchTitle = "";
@@ -74,7 +92,6 @@ cmd({
             searchTitle = searchResults.videos[0].title;
         }
 
-        const isAudioOnly = (command === 'mp3' || command === 'audio');
         const fetchType = isAudioOnly ? 'audio' : 'video';
 
         // Fetch stream from Azure

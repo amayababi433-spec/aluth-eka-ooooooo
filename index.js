@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 
 global.blockedUsersCache = new Map();
 const express = require('express');
@@ -343,7 +343,7 @@ console.log("[POLL DEBUG] DUMP:", {
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));
                 if (cmd) {
-                    await cmd.function(sock, mek, m, { from, q, reply, args, isOwner, isGroup, body, sender });
+                    await cmd.function(sock, mek, m, { from, q, reply, args, isOwner, isGroup, body, sender, command });
                 }
             }
 

@@ -172,8 +172,8 @@ async function downloadToBuffer(conn, target) {
 
 // 1. MP3 CONVERTER
 cmd({
-    pattern: "mp3",
-    alias: ["audio"],
+    pattern: "tomp3",
+    alias: ["toaudio"],
     desc: "Convert media to MP3",
     category: "converter",
     filename: __filename
