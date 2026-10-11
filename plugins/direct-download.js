@@ -1,14 +1,73 @@
 /**
- * 👑 DMC DIRECT WEB VIDEO DOWNLOADER (CRASH GUARD & SMART SIZE) 👑
- * LOGIC: High-speed direct MP4/Web video download with HTTP pre-check,
- *        Smart Size routing (Inline Video vs Document), and Strict Timeout Guard.
+ * 👑 DMC DIRECT WEB VIDEO DOWNLOADER (CRASH GUARD & FAKE LINK DETECTION) 👑
+ * LOGIC: Multi-layered verification for Direct Internet Video Links:
+ *        1. HTTP HEAD verification (MIME types, redirects, size guard)
+ *        2. Magic Bytes Sniffing (Initial bytes inspection to block fake .mp4 web pages)
+ *        3. Smart Size Guard (Inline Video vs Document, max 300MB)
+ *        4. 100% Isolated from YouTube Downloader Core Logic
  */
 
 const { cmd } = require('../command');
 const axios = require('axios');
 
-// Supported direct video extensions
+// Supported direct video extensions in URL
 const VIDEO_EXT_REGEX = /\.(mp4|mov|webm|mkv|avi|m4v)(\?.*)?$/i;
+
+// Valid video MIME types
+const VALID_VIDEO_MIME_TYPES = [
+    'video/mp4', 'video/webm', 'video/x-flv', 'video/quicktime',
+    'video/mpeg', 'video/3gpp', 'video/x-matroska', 'video/avi',
+    'video/msvideo', 'application/x-mpegurl', 'application/vnd.apple.mpegurl'
+];
+
+/**
+ * Inspect magic bytes of the first 1KB of the file to verify genuine video binary signature.
+ */
+function inspectMagicBytes(buffer) {
+    if (!buffer || buffer.length < 12) {
+        return { isVideo: false, reason: 'Empty or invalid file stream' };
+    }
+
+    const sample = buffer.slice(0, 200).toString('utf8').trim().toLowerCase();
+    if (sample.startsWith('<!doctype') || sample.startsWith('<html') ||
+        sample.includes('<head') || sample.includes('<script') ||
+        sample.includes('window.location') || sample.includes('<?php')) {
+        return { isVideo: false, reason: 'HTML Web Page / Phishing Page' };
+    }
+
+    // MP4 / MOV / 3GP (usually has 'ftyp' at bytes 4-8)
+    const ftyp = buffer.slice(4, 8).toString('utf8');
+    if (ftyp === 'ftyp' || ftyp === 'moov' || ftyp === 'mdat') {
+        return { isVideo: true, format: 'MP4' };
+    }
+
+    // Some MP4 files have ftyp within the first 32 bytes
+    if (buffer.indexOf(Buffer.from('ftyp')) !== -1 && buffer.indexOf(Buffer.from('ftyp')) < 32) {
+        return { isVideo: true, format: 'MP4' };
+    }
+
+    // MKV / WebM: EBML header (0x1A 0x45 0xDF 0xA3)
+    if (buffer[0] === 0x1A && buffer[1] === 0x45 && buffer[2] === 0xDF && buffer[3] === 0xA3) {
+        return { isVideo: true, format: 'MKV/WebM' };
+    }
+
+    // AVI: 'RIFF' .... 'AVI '
+    if (buffer.slice(0, 4).toString('utf8') === 'RIFF' && buffer.slice(8, 12).toString('utf8') === 'AVI ') {
+        return { isVideo: true, format: 'AVI' };
+    }
+
+    // FLV: 0x46 0x4C 0x56
+    if (buffer[0] === 0x46 && buffer[1] === 0x4C && buffer[2] === 0x56) {
+        return { isVideo: true, format: 'FLV' };
+    }
+
+    // MPEG-TS sync byte (0x47)
+    if (buffer[0] === 0x47) {
+        return { isVideo: true, format: 'MPEG-TS' };
+    }
+
+    return { isVideo: false, reason: 'Unrecognized video file signature' };
+}
 
 // Reusable download and stream handler
 async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
@@ -29,50 +88,88 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
 
     await reply("⏳ *Direct Video Link හඳුනාගන්නා ලදී. Crash Guard පරීක්ෂාව සිදු වෙමින් පවතී...*");
 
-    // 2. HTTP Pre-check (HEAD verification with GET Range fallback)
-    let contentType = 'video/mp4';
+    // ----------------------------------------------------
+    // LAYER 1: Enhanced HTTP HEAD Pre-check
+    // ----------------------------------------------------
+    let contentType = '';
     let fileSizeMB = 0;
+    let contentDisposition = '';
 
     try {
         const headRes = await axios.head(targetUrl, {
             timeout: 5000,
+            maxRedirects: 5,
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             validateStatus: (s) => s >= 200 && s < 400
         });
-        contentType = headRes.headers['content-type'] || 'video/mp4';
+
+        contentType = headRes.headers['content-type'] ? headRes.headers['content-type'].toLowerCase() : '';
+        contentDisposition = headRes.headers['content-disposition'] ? headRes.headers['content-disposition'].toLowerCase() : '';
         const contentLength = parseInt(headRes.headers['content-length'] || '0', 10);
         fileSizeMB = contentLength / (1024 * 1024);
+
     } catch (headErr) {
-        // Fallback to GET with range 0-1024
+        // Fallback to minimal Range GET
         try {
             const rangeRes = await axios.get(targetUrl, {
                 timeout: 7000,
+                maxRedirects: 5,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                     'Range': 'bytes=0-1024'
                 },
                 validateStatus: (s) => s >= 200 && s < 400
             });
-            contentType = rangeRes.headers['content-type'] || 'video/mp4';
+
+            contentType = rangeRes.headers['content-type'] ? rangeRes.headers['content-type'].toLowerCase() : '';
+            contentDisposition = rangeRes.headers['content-disposition'] ? rangeRes.headers['content-disposition'].toLowerCase() : '';
             const contentLength = parseInt(rangeRes.headers['content-length'] || '0', 10);
             fileSizeMB = contentLength / (1024 * 1024);
         } catch (fallbackErr) {
-            console.error("Precheck Error:", fallbackErr.message);
-            return reply("❌ *ලින්ක් එක පරීක්ෂා කිරීම අසාර්ථක විය. ලින්ක් එක නිවැරදිද සහ සක්‍රියදැයි බලන්න.*");
+            console.error("Direct Precheck Error:", fallbackErr.message);
+            return reply("❌ *ලින්ක් එක පරීක්ෂා කිරීම අසාර්ථක විය. ලින්ක් එක සක්‍රියදැයි බලන්න.*");
         }
     }
 
-    // 3. Validate content type
-    const isVideo = contentType.startsWith('video/') ||
-                    contentType.includes('octet-stream') ||
-                    VIDEO_EXT_REGEX.test(targetUrl) ||
-                    targetUrl.includes('videy.co');
-
-    if (!isVideo) {
-        return reply("❌ *මෙම ලින්ක් එක වීඩියෝවක් නොවේ (Type: " + contentType + ")*");
+    // 1.1 Strict check against fake HTML / JSON / API responses
+    if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('text/plain')) {
+        return reply("❌ *මෙම ලින්ක් එක සැබෑ Video එකක් නොවේ (ව්‍යාජ / Web Page හෝ Phishing ලින්ක් එකකි).*\n\n_ලින්ක් එක අගට .mp4 තිබුණද, සේවාදායකය (Server) විසින් ලබා දෙන්නේ වෙබ් පිටුවක් (HTML) පමණි._");
     }
 
-    // 4. Smart Size Guard
+    // ----------------------------------------------------
+    // LAYER 2: Magic Bytes Sniffing (Initial Bytes Inspection)
+    // ----------------------------------------------------
+    try {
+        const sniffRes = await axios.get(targetUrl, {
+            timeout: 7000,
+            maxRedirects: 5,
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Range': 'bytes=0-1024'
+            },
+            validateStatus: (s) => s >= 200 && s < 400
+        });
+
+        const sniffBuffer = Buffer.from(sniffRes.data);
+        const magicCheck = inspectMagicBytes(sniffBuffer);
+
+        if (!magicCheck.isVideo) {
+            return reply("❌ *මෙම ලින්ක් එක සැබෑ Video File එකක් නොවේ!*\n\n⚠️ *හඳුනාගැනීම:* " + magicCheck.reason + "\n_ව්‍යාජ ලින්ක් මඟින් Bot Crash වීම වැළැක්වීමට Crash Guard විසින් මෙම ක්‍රියාවලිය නවතා දමන ලදී._");
+        }
+
+    } catch (sniffErr) {
+        console.error("Magic bytes sniffing error:", sniffErr.message);
+        // If server strictly rejects range header or throws error, we proceed cautiously only if contentType is explicit video
+        const isExplicitVideo = VALID_VIDEO_MIME_TYPES.some(t => contentType.includes(t));
+        if (!isExplicitVideo) {
+            return reply("❌ *වීඩියෝවේ සත්‍යතාව තහවුරු කළ නොහැකි විය (Signature check failed).*");
+        }
+    }
+
+    // ----------------------------------------------------
+    // LAYER 3: Smart Size Guard (Limits & Routing)
+    // ----------------------------------------------------
     const MAX_TOTAL_SIZE_MB = 300;
     const MAX_VIDEO_INLINE_MB = 100;
 
@@ -83,7 +180,9 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     const sizeText = fileSizeMB > 0 ? fileSizeMB.toFixed(2) + " MB" : "Direct Stream";
     await reply("🚀 *බාගත වෙමින් පවතී (" + sizeText + ")... කරුණාකර රැඳී සිටින්න.*");
 
-    // 5. Send Media (Direct streaming via Baileys)
+    // ----------------------------------------------------
+    // LAYER 4: Send Media via Baileys Stream Pipeline
+    // ----------------------------------------------------
     try {
         if (fileSizeMB > MAX_VIDEO_INLINE_MB) {
             // Send as WhatsApp Document (100MB - 300MB)
@@ -104,7 +203,7 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
         }
     } catch (sendErr) {
         console.error("Direct Video Send Error:", sendErr.message);
-        reply("❌ *වීඩියෝව එවීමේදී දෝෂයක් සිදු විය. ලින්ක් එකේ අවසර (Permissions) පරීක්ෂා කරන්න.*");
+        reply("❌ *වීඩියෝව එවීමේදී WhatsApp දෝෂයක් සිදු විය. කරුණාකර නැවත උත්සාහ කරන්න.*");
     }
 }
 
@@ -157,7 +256,7 @@ cmd({
         const isHttpUrl = /^https?:\/\/\S+$/i.test(trimmed);
         if (!isHttpUrl) return;
 
-        const isVidey = trimmed.includes('videy.co');
+        const isVidey = trimmed.includes('videy.co') || trimmed.includes('videyc.pw');
         const isDirectVideo = VIDEO_EXT_REGEX.test(trimmed);
 
         if (isVidey || isDirectVideo) {
