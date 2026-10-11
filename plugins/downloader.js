@@ -12,7 +12,7 @@ const API_ENDPOINT = 'https://partners-approaches-limit-train.trycloudflare.com/
 // Helper to fetch video info from our Azure Playwright API
 async function fetchFromAzure(videoUrl) {
     const res = await axios.get(API_ENDPOINT + '?url=' + encodeURIComponent(videoUrl), {
-        timeout: 45000
+        timeout: 90000
     });
     return res.data;
 }
