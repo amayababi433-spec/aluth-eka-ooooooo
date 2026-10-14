@@ -3,3 +3,6 @@ node_modules/
 .env
 auth_info_baileys/
 session/
+
+temp_base.jpg
+test_anim*.webp

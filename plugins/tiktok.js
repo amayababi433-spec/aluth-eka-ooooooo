@@ -1,8 +1,9 @@
 /**
- * 👑 DMC TIKTOK NO-WATERMARK HD DOWNLOADER V2 (MULTI-ENGINE & POLL SUPPORT) 👑
- * LOGIC: Ultra-resilient TikTok video and audio extraction
- *        - Engine 1: TikWM POST (Desktop/Mobile mimic with Referer guard)
- *        - Engine 2: TikWM Secondary GET endpoint
+ * 👑 DMC TIKTOK NO-WATERMARK HD DOWNLOADER V3 (CLOUD-RESILIENT HYBRID ENGINE) 👑
+ * LOGIC: Ultra-resilient multi-engine scraper optimized for Cloud/Koyeb hosting
+ *        - Engine 1: SSSTik Scraper (Bypasses Cloudflare on Datacenter/Cloud IPs)
+ *        - Engine 2: TikWM POST (High-speed mobile mimic with origin guard)
+ *        - Engine 3: TikWM GET Endpoint
  *        - Format 1: HD Original (No Watermark)
  *        - Format 2: No Watermark MP4
  *        - Format 3: MP3 Audio
@@ -12,6 +13,8 @@
 
 const { cmd } = require('../command');
 const axios = require('axios');
+const cheerio = require('cheerio');
+const qs = require('qs');
 
 // In-memory cache for pending user selections (Key: jid/sender)
 const pendingTikTok = new Map();
@@ -38,24 +41,75 @@ function extractTikTokUrl(text) {
 }
 
 /**
- * Multi-Engine TikTok Scraper
+ * ENGINE 1: SSSTik Scraper (100% Cloud/Koyeb Datacenter Safe)
  */
-async function fetchTikTokData(rawUrl) {
-    const targetUrl = extractTikTokUrl(rawUrl) || rawUrl.trim();
+async function scrapeSSSTik(tiktokUrl) {
+    try {
+        const res1 = await axios.get('https://ssstik.io/en', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9'
+            },
+            timeout: 10000
+        });
 
-    // ----------------------------------------------------
-    // ENGINE 1: TikWM POST with Form-Data & Anti-Bot Headers
-    // ----------------------------------------------------
+        const cookies = res1.headers['set-cookie'];
+        const ttMatch = res1.data.match(/s_tt\s*=\s*['"]([^'"]+)['"]/i);
+        const tt = ttMatch ? ttMatch[1] : '';
+
+        const postRes = await axios.post('https://ssstik.io/abc?url=dl', qs.stringify({
+            id: tiktokUrl,
+            locale: 'en',
+            tt: tt
+        }), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'HX-Request': 'true',
+                'Referer': 'https://ssstik.io/en',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cookie': cookies ? cookies.join('; ') : ''
+            },
+            timeout: 15000
+        });
+
+        const $ = cheerio.load(postRes.data);
+        const title = $('p.maintext').text().trim() || "TikTok Video";
+        const hdLink = $('a.without_watermark_hd').attr('href') || null;
+        let noWmLink = $('a.without_watermark').attr('href') || null;
+        const musicLink = $('a.music').attr('href') || null;
+
+        if (noWmLink && noWmLink.startsWith('//')) noWmLink = 'https:' + noWmLink;
+
+        if (noWmLink || musicLink) {
+            return {
+                title,
+                author: { nickname: "TikTok Creator" },
+                play: noWmLink,
+                hdplay: hdLink || noWmLink,
+                music: musicLink,
+                source: "SSSTik Engine"
+            };
+        }
+    } catch (e) {
+        console.log("[TIKTOK ENGINE 1 SSSTIK FAIL]:", e.message);
+    }
+    return null;
+}
+
+/**
+ * ENGINE 2: TikWM POST Endpoint
+ */
+async function scrapeTikWMPost(tiktokUrl) {
     try {
         const params = new URLSearchParams({
-            url: targetUrl,
+            url: tiktokUrl,
             count: 12,
             cursor: 0,
             web: 1,
             hd: 1
         });
 
-        const res1 = await axios.post('https://www.tikwm.com/api/', params.toString(), {
+        const res = await axios.post('https://www.tikwm.com/api/', params.toString(), {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
@@ -63,53 +117,57 @@ async function fetchTikTokData(rawUrl) {
                 'Origin': 'https://www.tikwm.com',
                 'Accept': 'application/json, text/javascript, */*; q=0.01'
             },
-            timeout: 15000
+            timeout: 12000
         });
 
-        if (res1.data && res1.data.code === 0 && res1.data.data) {
-            return res1.data.data;
+        if (res.data && res.data.code === 0 && res.data.data) {
+            return res.data.data;
         }
-    } catch (e1) {
-        console.log("[TIKTOK ENGINE 1 FAIL]:", e1.message);
+    } catch (e) {
+        console.log("[TIKTOK ENGINE 2 TIKWM POST FAIL]:", e.message);
     }
+    return null;
+}
 
-    // ----------------------------------------------------
-    // ENGINE 2: TikWM GET Endpoint (Direct Query Parameter)
-    // ----------------------------------------------------
+/**
+ * ENGINE 3: TikWM Direct GET Endpoint
+ */
+async function scrapeTikWMGet(tiktokUrl) {
     try {
-        const res2 = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(targetUrl)}&hd=1`, {
+        const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}&hd=1`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://www.tikwm.com/'
             },
-            timeout: 15000
+            timeout: 12000
         });
 
-        if (res2.data && res2.data.code === 0 && res2.data.data) {
-            return res2.data.data;
+        if (res.data && res.data.code === 0 && res.data.data) {
+            return res.data.data;
         }
-    } catch (e2) {
-        console.log("[TIKTOK ENGINE 2 FAIL]:", e2.message);
+    } catch (e) {
+        console.log("[TIKTOK ENGINE 3 TIKWM GET FAIL]:", e.message);
     }
+    return null;
+}
 
-    // ----------------------------------------------------
-    // ENGINE 3: Alternative TikWM Domain
-    // ----------------------------------------------------
-    try {
-        const res3 = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(targetUrl)}`, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                'Referer': 'https://tikwm.com/'
-            },
-            timeout: 15000
-        });
+/**
+ * Master Resolver: Runs multi-engine cascade
+ */
+async function fetchTikTokData(rawUrl) {
+    const cleanUrl = extractTikTokUrl(rawUrl) || rawUrl.trim();
 
-        if (res3.data && res3.data.code === 0 && res3.data.data) {
-            return res3.data.data;
-        }
-    } catch (e3) {
-        console.log("[TIKTOK ENGINE 3 FAIL]:", e3.message);
-    }
+    // 1. Try SSSTik first (Most resilient on Koyeb/Cloud IPs)
+    const data1 = await scrapeSSSTik(cleanUrl);
+    if (data1 && (data1.play || data1.hdplay || data1.music)) return data1;
+
+    // 2. Try TikWM POST
+    const data2 = await scrapeTikWMPost(cleanUrl);
+    if (data2 && (data2.play || data2.hdplay || data2.music)) return data2;
+
+    // 3. Try TikWM GET
+    const data3 = await scrapeTikWMGet(cleanUrl);
+    if (data3 && (data3.play || data3.hdplay || data3.music)) return data3;
 
     return null;
 }
@@ -153,9 +211,7 @@ async function sendChosenFormat(conn, from, mek, session, formatType) {
             video: { url: videoUrl },
             caption: `👑 *${cleanTitle}* 👑\n\n` +
                      `✨ *Format:* ${formatLabel}\n` +
-                     `👤 *Author:* @${authorName}\n` +
-                     `👁️ *Views:* ${(data.play_count || 0).toLocaleString()}\n` +
-                     `❤️ *Likes:* ${(data.digg_count || 0).toLocaleString()}\n\n` +
+                     `👤 *Author:* @${authorName}\n\n` +
                      `_Downloaded via ＤＭＣ™ Core Engine_`
         }, { quoted: mek });
 
@@ -241,7 +297,7 @@ cmd({
         await reply("⏳ *TikTok තොරතුරු ලබාගනිමින් පවතී...*");
 
         const data = await fetchTikTokData(validUrl);
-        if (!data || (!data.play && !data.hdplay && !data.wmplay)) {
+        if (!data || (!data.play && !data.hdplay && !data.music)) {
             return reply("❌ *TikTok වීඩියෝව සොයාගත නොහැකි විය. කරුණාකර ලින්ක් එක පරීක්ෂා කරන්න.*");
         }
 
@@ -343,7 +399,7 @@ cmd({
         await reply("⏳ *TikTok ලින්ක් එක හඳුනාගන්නා ලදී. විස්තර ලබාගනිමින් පවතී...*");
 
         const data = await fetchTikTokData(validUrl);
-        if (!data || (!data.play && !data.hdplay && !data.wmplay)) {
+        if (!data || (!data.play && !data.hdplay && !data.music)) {
             return reply("❌ *TikTok වීඩියෝව සොයාගත නොහැකි විය. කරුණාකර ලින්ක් එක නිවැරදි දැයි බලන්න.*");
         }
 
