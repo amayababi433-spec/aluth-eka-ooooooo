@@ -425,8 +425,8 @@ cmd({
         // Ignore commands
         if (trimmed.startsWith('.') || trimmed.startsWith('!') || trimmed.startsWith('/')) return;
 
-        // Ignore YouTube links (handled by downloader.js)
-        if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) return;
+        // Ignore YouTube, TikTok & Facebook links
+        if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be') || trimmed.includes('tiktok.com') || trimmed.includes('facebook.com') || trimmed.includes('fb.watch') || trimmed.includes('fb.com')) return;
 
         // Check if message is a direct video link
         const isHttpUrl = /^https?:\/\/\S+$/i.test(trimmed);
