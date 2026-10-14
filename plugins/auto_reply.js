@@ -103,6 +103,13 @@ cmd({
         const db = await getDB();
         if (!db) return;
         
+        // Ignore 1, 2, 3 if user has a pending TikTok format selection
+        if (global.pendingTikTok) {
+            const rawSender = (sender || from || '').split('@')[0];
+            const isTikTokPending = Array.from(global.pendingTikTok.keys()).some(k => k.includes(rawSender));
+            if (isTikTokPending) return;
+        }
+
         // 🔹 0, 1, 2 Global Shortcuts 🔹
         if (text === '0' || lowerText === 'reset' || text.includes('0.RESET')) {
             userCache.delete(sender);
