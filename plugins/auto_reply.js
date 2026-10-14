@@ -68,6 +68,8 @@ cmd({
         if (!body || typeof body !== 'string') return;
         if (isGroup || from?.endsWith('@g.us') || mek?.key?.fromMe) return;
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
+        // Ignore links so downloaders (TikTok, YouTube, Direct Video) work cleanly without collision
+        if (/https?:\/\//i.test(body) || body.includes('tiktok.com') || body.includes('youtu')) return;
         // if (isOwner) return; // Removed so owner can test bot
 
         // 🔹 ANTI-BOT: Ignore interactive messages completely 🔹

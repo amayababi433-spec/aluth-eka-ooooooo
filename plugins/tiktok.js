@@ -1,9 +1,11 @@
 /**
- * 👑 DMC TIKTOK NO-WATERMARK HD DOWNLOADER (POLL & 1-TAP CATEGORIES) 👑
- * LOGIC: High-speed TikTok Scraper via TikWM Engine
- *        - HD Original (No Watermark)
- *        - No Watermark MP4
- *        - MP3 Audio
+ * 👑 DMC TIKTOK NO-WATERMARK HD DOWNLOADER V2 (MULTI-ENGINE & POLL SUPPORT) 👑
+ * LOGIC: Ultra-resilient TikTok video and audio extraction
+ *        - Engine 1: TikWM POST (Desktop/Mobile mimic with Referer guard)
+ *        - Engine 2: TikWM Secondary GET endpoint
+ *        - Format 1: HD Original (No Watermark)
+ *        - Format 2: No Watermark MP4
+ *        - Format 3: MP3 Audio
  * 
  * 100% Isolated Plugin - Preserves existing YouTube & Playwright hardcode logic.
  */
@@ -12,7 +14,6 @@ const { cmd } = require('../command');
 const axios = require('axios');
 
 // In-memory cache for pending user selections (Key: jid/sender)
-// Auto-purged after 10 minutes to prevent memory leaks
 const pendingTikTok = new Map();
 
 // Periodic cleanup of stale sessions older than 10 minutes
@@ -26,34 +27,100 @@ setInterval(() => {
 }, 60000);
 
 /**
- * Fetch video details from TikWM API
+ * Intelligent URL Extractor:
+ * Extracts genuine TikTok URL even from multi-line messages, previews, or messy copy-pastes.
  */
-async function fetchTikTokData(tiktokUrl) {
-    try {
-        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
-            timeout: 25000
-        });
-
-        if (response.data && response.data.code === 0 && response.data.data) {
-            return response.data.data;
-        }
-        return null;
-    } catch (err) {
-        console.error("[TIKTOK API ERROR]:", err.message);
-        return null;
-    }
+function extractTikTokUrl(text) {
+    if (!text || typeof text !== 'string') return null;
+    const match = text.match(/https?:\/\/(?:www\.|vm\.|vt\.|t\.|v\.)?tiktok\.com\/[^\s<>"')]+/i);
+    if (!match) return null;
+    return match[0].trim();
 }
 
 /**
- * Helper to deliver chosen format to user
+ * Multi-Engine TikTok Scraper
+ */
+async function fetchTikTokData(rawUrl) {
+    const targetUrl = extractTikTokUrl(rawUrl) || rawUrl.trim();
+
+    // ----------------------------------------------------
+    // ENGINE 1: TikWM POST with Form-Data & Anti-Bot Headers
+    // ----------------------------------------------------
+    try {
+        const params = new URLSearchParams({
+            url: targetUrl,
+            count: 12,
+            cursor: 0,
+            web: 1,
+            hd: 1
+        });
+
+        const res1 = await axios.post('https://www.tikwm.com/api/', params.toString(), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'Referer': 'https://www.tikwm.com/',
+                'Origin': 'https://www.tikwm.com',
+                'Accept': 'application/json, text/javascript, */*; q=0.01'
+            },
+            timeout: 15000
+        });
+
+        if (res1.data && res1.data.code === 0 && res1.data.data) {
+            return res1.data.data;
+        }
+    } catch (e1) {
+        console.log("[TIKTOK ENGINE 1 FAIL]:", e1.message);
+    }
+
+    // ----------------------------------------------------
+    // ENGINE 2: TikWM GET Endpoint (Direct Query Parameter)
+    // ----------------------------------------------------
+    try {
+        const res2 = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(targetUrl)}&hd=1`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.tikwm.com/'
+            },
+            timeout: 15000
+        });
+
+        if (res2.data && res2.data.code === 0 && res2.data.data) {
+            return res2.data.data;
+        }
+    } catch (e2) {
+        console.log("[TIKTOK ENGINE 2 FAIL]:", e2.message);
+    }
+
+    // ----------------------------------------------------
+    // ENGINE 3: Alternative TikWM Domain
+    // ----------------------------------------------------
+    try {
+        const res3 = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(targetUrl)}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Referer': 'https://tikwm.com/'
+            },
+            timeout: 15000
+        });
+
+        if (res3.data && res3.data.code === 0 && res3.data.data) {
+            return res3.data.data;
+        }
+    } catch (e3) {
+        console.log("[TIKTOK ENGINE 3 FAIL]:", e3.message);
+    }
+
+    return null;
+}
+
+/**
+ * Deliver Chosen Format to User
  */
 async function sendChosenFormat(conn, from, mek, session, formatType) {
     try {
         const { data, title, author } = session;
-        const cleanTitle = title || "TikTok Video";
+        const cleanTitle = (title || "TikTok Video").replace(/[^\w\s\u0D80-\u0DFF-]/g, '').trim() || "TikTok Video";
         const authorName = author?.nickname || author?.unique_id || "TikTok User";
 
         if (formatType === 'audio') {
@@ -73,7 +140,7 @@ async function sendChosenFormat(conn, from, mek, session, formatType) {
         }
 
         const isHD = (formatType === 'hd');
-        const videoUrl = isHD ? (data.hdplay || data.play) : data.play;
+        const videoUrl = isHD ? (data.hdplay || data.play) : (data.play || data.wmplay);
 
         if (!videoUrl) {
             return conn.sendMessage(from, { text: "❌ *Video stream එක ලබා ගැනීමට නොහැකි විය.*" }, { quoted: mek });
@@ -110,7 +177,6 @@ global.processPollVote = async (sender, selectedOption, sock) => {
 
         if (!sender || !selectedOption) return;
 
-        // Normalize sender key
         const userKey = sender.replace('@lid', '').replace('@s.whatsapp.net', '').replace('@c.us', '');
         let matchedSession = null;
         let matchedKey = null;
@@ -159,26 +225,24 @@ cmd({
     try {
         if (mek.key.fromMe) return;
 
-        let url = (q || "").trim();
-        if (!url) {
-            // Check quoted message for link
+        let rawInput = (q || "").trim();
+        if (!rawInput) {
             const quoted = mek?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
             if (quoted) {
-                const text = quoted?.conversation || quoted?.extendedTextMessage?.text || "";
-                const match = text.match(/https?:\/\/(www\.|vm\.|vt\.|t\.)?tiktok\.com\/[^\s]+/i);
-                if (match) url = match[0];
+                rawInput = quoted?.conversation || quoted?.extendedTextMessage?.text || "";
             }
         }
 
-        if (!url || !url.includes("tiktok.com")) {
+        const validUrl = extractTikTokUrl(rawInput);
+        if (!validUrl) {
             return reply("⚠️ *කරුණාකර TikTok වීඩියෝ ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*.tiktok https://vt.tiktok.com/...*");
         }
 
         await reply("⏳ *TikTok තොරතුරු ලබාගනිමින් පවතී...*");
 
-        const data = await fetchTikTokData(url);
-        if (!data || (!data.play && !data.hdplay)) {
-            return reply("❌ *TikTok වීඩියෝව සොයාගත නොහැකි විය. ලින්ක් එක නිවැරදි දැයි පරීක්ෂා කරන්න.*");
+        const data = await fetchTikTokData(validUrl);
+        if (!data || (!data.play && !data.hdplay && !data.wmplay)) {
+            return reply("❌ *TikTok වීඩියෝව සොයාගත නොහැකි විය. කරුණාකර ලින්ක් එක පරීක්ෂා කරන්න.*");
         }
 
         const sessionKey = `${(sender || from).split('@')[0]}_${from}`;
@@ -193,18 +257,17 @@ cmd({
         pendingTikTok.set(sessionKey, sessionData);
 
         const cleanTitle = (data.title || "TikTok Video").slice(0, 60);
+        const pollOptions = [
+            "HD Original (No Watermark)",
+            "No Watermark MP4",
+            "MP3 Audio"
+        ];
 
-        // A. Send Native WhatsApp Poll with the exact 3 categories from user's image
+        // Send Native WhatsApp Poll
         try {
-            const pollOptions = [
-                "HD Original (No Watermark)",
-                "No Watermark MP4",
-                "MP3 Audio"
-            ];
-
             const pollMsg = await conn.sendMessage(from, {
                 poll: {
-                    name: `🎬 *TIKTOK DOWNLOADER* 🎬\n\n📌 *Title:* ${cleanTitle}\n\nකරුණාකර ඔබට අවශ්‍ය Format එක තෝරන්න (Select Format):`,
+                    name: `🎬 *TIKTOK DOWNLOADER* 🎬\n\n📌 *Title:* ${cleanTitle}\n\nකරුණාකර Format එකක් තෝරන්න (Select Format):`,
                     values: pollOptions,
                     selectableCount: 1
                 }
@@ -217,15 +280,13 @@ cmd({
                     options: pollOptions
                 });
             }
-        } catch (pollErr) {
-            console.log("[TIKTOK POLL CREATE ERROR]:", pollErr.message);
-        }
+        } catch (_) {}
 
-        // B. Send Numbered Fallback Menu for users who prefer replying with numbers (1, 2, 3)
+        // Send Fallback Numbered Menu
         const menuText = `👑 *ＤＭＣ™ TIKTOK DOWNLOADER* 👑\n\n` +
                          `📌 *Title:* ${cleanTitle}\n` +
                          `👤 *Author:* @${data.author?.nickname || "User"}\n\n` +
-                         `කරුණාකර ඉහත Poll එක Vote කරන්න, නැතහොත් අදාළ *අංකය (1, 2, හෝ 3)* Reply කරන්න:\n\n` +
+                         `කරුණාකර ඉහත Poll එකෙන් තෝරන්න, නැතහොත් අදාළ *අංකය (1, 2, හෝ 3)* Reply කරන්න:\n\n` +
                          `  [1] 🌟 *HD Original (No Watermark)*\n` +
                          `  [2] 🎬 *No Watermark MP4*\n` +
                          `  [3] 🎵 *MP3 Audio*\n\n` +
@@ -251,7 +312,7 @@ cmd({
         const trimmed = body.trim();
         const userKey = `${(sender || from).split('@')[0]}_${from}`;
 
-        // A. Check if the user replied with 1, 2, or 3 for pending selection
+        // A. Handle user selection (1, 2, or 3) for pending TikTok download
         if (pendingTikTok.has(userKey)) {
             const input = trimmed.toLowerCase();
             let chosen = null;
@@ -272,18 +333,18 @@ cmd({
             }
         }
 
-        // B. Passive link detection: Auto-detect TikTok URL pasted directly
-        const tiktokRegex = /^(https?:\/\/)?(www\.|vm\.|vt\.|t\.)?tiktok\.com\/[^\s]+$/i;
-        if (!tiktokRegex.test(trimmed)) return;
+        // B. Passive TikTok Link Detection (Supports multi-line, dirty strings, and preview text)
+        const validUrl = extractTikTokUrl(trimmed);
+        if (!validUrl) return;
 
-        // Skip if it was already a command
+        // Skip if it was already an explicit command
         if (trimmed.startsWith('.') || trimmed.startsWith('!') || trimmed.startsWith('/')) return;
 
         await reply("⏳ *TikTok ලින්ක් එක හඳුනාගන්නා ලදී. විස්තර ලබාගනිමින් පවතී...*");
 
-        const data = await fetchTikTokData(trimmed);
-        if (!data || (!data.play && !data.hdplay)) {
-            return reply("❌ *TikTok වීඩියෝව සොයාගත නොහැකි විය.*");
+        const data = await fetchTikTokData(validUrl);
+        if (!data || (!data.play && !data.hdplay && !data.wmplay)) {
+            return reply("❌ *TikTok වීඩියෝව සොයාගත නොහැකි විය. කරුණාකර ලින්ක් එක නිවැරදි දැයි බලන්න.*");
         }
 
         const sessionData = {
@@ -297,15 +358,14 @@ cmd({
         pendingTikTok.set(userKey, sessionData);
 
         const cleanTitle = (data.title || "TikTok Video").slice(0, 60);
+        const pollOptions = [
+            "HD Original (No Watermark)",
+            "No Watermark MP4",
+            "MP3 Audio"
+        ];
 
         // Send Native WhatsApp Poll
         try {
-            const pollOptions = [
-                "HD Original (No Watermark)",
-                "No Watermark MP4",
-                "MP3 Audio"
-            ];
-
             const pollMsg = await conn.sendMessage(from, {
                 poll: {
                     name: `🎬 *TIKTOK DOWNLOADER* 🎬\n\n📌 *Title:* ${cleanTitle}\n\nකරුණාකර Format එකක් තෝරන්න (Select Format):`,
@@ -323,11 +383,11 @@ cmd({
             }
         } catch (_) {}
 
-        // Numbered Fallback Prompt
+        // Send Fallback Numbered Menu
         const menuText = `👑 *ＤＭＣ™ TIKTOK DOWNLOADER* 👑\n\n` +
                          `📌 *Title:* ${cleanTitle}\n` +
                          `👤 *Author:* @${data.author?.nickname || "User"}\n\n` +
-                         `කරුණාකර ඉහත Poll එක Vote කරන්න, නැතහොත් අදාළ *අංකය (1, 2, හෝ 3)* Reply කරන්න:\n\n` +
+                         `කරුණාකර ඉහත Poll එකෙන් තෝරන්න, නැතහොත් අදාළ *අංකය (1, 2, හෝ 3)* Reply කරන්න:\n\n` +
                          `  [1] 🌟 *HD Original (No Watermark)*\n` +
                          `  [2] 🎬 *No Watermark MP4*\n` +
                          `  [3] 🎵 *MP3 Audio*\n\n` +
