@@ -194,7 +194,7 @@ function formatTikTokMenu(data, validUrl, botNum) {
     return `👑 *ＤＭＣ™ TIKTOK DOWNLOADER* 👑\n\n` +
            `📌 *Title:* ${cleanTitle}\n` +
            `👤 *Author:* @${authorName}\n\n` +
-           `කරුණාකර පහත Link එකක් Tap කරන්න, නැතහොත් අදාළ *අංකය (1, 2, හෝ 3)* Reply කරන්න:\n\n` +
+           `කරුණාකර Link එක Touch කර Enter ඔබන්න:\n\n` +
            `[1] 🌟 *HD Original (No Watermark)*${tapHD}\n\n` +
            `[2] 🎬 *No Watermark MP4*${tapMP4}\n\n` +
            `[3] 🎵 *MP3 Audio*${tapMP3}\n\n` +
