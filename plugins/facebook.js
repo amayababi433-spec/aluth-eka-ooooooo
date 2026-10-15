@@ -19,6 +19,15 @@ const getFBInfo = require('@renpwn/fb-downloader');
  * Intelligent Facebook URL Extractor:
  * Extracts clean Facebook URL from any dirty text, multi-line string, or link preview.
  */
+function isPlayableVideo(url) {
+    if (!url || typeof url !== 'string') return false;
+    const lower = url.toLowerCase();
+    if (lower.includes('.mpd') || lower.includes('/dash/') || lower.includes('manifest.mpd') || lower.includes('format=mpd') || lower.includes('mime=application%2fdash%2bxml')) {
+        return false;
+    }
+    return true;
+}
+
 function extractFacebookUrl(text) {
     if (!text || typeof text !== 'string') return null;
     const match = text.match(/https?:\/\/(?:www\.|m\.|web\.|fb\.)?(?:facebook\.com|fb\.watch|fb\.com)\/[^\s<>"')]+/i);
@@ -116,12 +125,16 @@ async function scrapeSnapSave(fbUrl) {
         let sdUrl = null;
         const photos = [];
 
-        // Parse Table for Videos
+        // Parse Table for Videos (Filtered against .mpd DASH manifests)
         $("tbody > tr").each((_, el) => {
             const $td = $(el).find("td");
             const resolution = $td.eq(0).text().trim().toLowerCase();
             let url = $td.eq(2).find("a").attr("href") || $td.eq(2).find("button").attr("onclick");
-            if (url && url.startsWith('http')) {
+            if (url && typeof url === 'string') {
+                const matchUrl = url.match(/https?:\/\/[^\s"']+/);
+                if (matchUrl) url = matchUrl[0];
+            }
+            if (url && url.startsWith('http') && isPlayableVideo(url)) {
                 if (resolution.includes('hd') || resolution.includes('1080') || resolution.includes('720')) {
                     if (!hdUrl) hdUrl = url;
                 } else {
@@ -129,6 +142,10 @@ async function scrapeSnapSave(fbUrl) {
                 }
             }
         });
+
+        // Ensure selected URLs are valid playable video
+        if (hdUrl && !isPlayableVideo(hdUrl)) hdUrl = null;
+        if (sdUrl && !isPlayableVideo(sdUrl)) sdUrl = null;
 
         // Parse Photos / Images
         $("div.download-items, div.card").each((_, el) => {
@@ -175,6 +192,7 @@ async function scrapeSiputzx(fbUrl) {
 
             if (Array.isArray(data.downloads)) {
                 for (const item of data.downloads) {
+                    if (!item.url || !isPlayableVideo(item.url)) continue;
                     const q = (item.quality || '').toLowerCase();
                     if (q.includes('hd') || q.includes('720') || q.includes('1080')) {
                         if (!hdUrl) hdUrl = item.url;
@@ -324,7 +342,10 @@ async function processFacebookDownload(conn, mek, from, validUrl, forceFormat = 
         }
 
         // C. VIDEO / REEL DOWNLOAD
-        const videoUrl = (forceFormat === 'sd') ? (data.sd || data.hd) : (data.hd || data.sd);
+        let videoUrl = (forceFormat === 'sd') ? (data.sd || data.hd) : (data.hd || data.sd);
+        if (videoUrl && !isPlayableVideo(videoUrl)) {
+            videoUrl = isPlayableVideo(data.sd) ? data.sd : (isPlayableVideo(data.hd) ? data.hd : null);
+        }
         if (!videoUrl) {
             // If no video URL but has photo, fallback to photo
             if (data.photos && data.photos.length > 0) {

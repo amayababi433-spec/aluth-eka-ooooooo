@@ -162,11 +162,20 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
         await reply("⏳ *DiskWala ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
         const res = await axios.get(DISKWALA_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 110000
+            timeout: 110000,
+            validateStatus: (status) => status < 500
         });
 
+        if (res.status === 404 || res.data?.error?.includes('404')) {
+            return reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");
+        }
+
         if (!res.data || !res.data.download_url) {
-            return reply("❌ *DiskWala වීඩියෝව ලබා ගැනීමට නොහැකි විය: " + (res.data?.error || 'URL not found') + "*");
+            const errDetail = res.data?.error || 'URL not found';
+            if (errDetail.includes('No genuine video stream') || errDetail.includes('ad filtering')) {
+                return reply("❌ *DiskWala Stream Error: Ad filter වීමෙන් පසු සැබෑ වීඩියෝ Stream එකක් සොයාගත නොහැකි විය. වීඩියෝව App එකේ පමණක් ක්‍රියාත්මක වන එකක් විය හැක.*");
+            }
+            return reply("❌ *DiskWala වීඩියෝව ලබා ගැනීමට නොහැකි විය: " + errDetail + "*");
         }
 
         const data = res.data;
@@ -184,14 +193,24 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
                     document: { url: data.download_url },
                     mimetype: 'video/mp4',
                     fileName: fileName,
-                    caption: "👑 *DiskWala Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                    caption: `👑 *DiskWala Video (Document)* 👑
+
+📦 *File:* ${title}
+📊 *Size:* ${sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown"}
+
+_Downloaded via ＤＭＣ™ Playwright Cloud Engine_`
                 }, { quoted: mek });
             } else {
                 // Send as Video if <= 100MB
                 await conn.sendMessage(from, {
                     video: { url: data.download_url },
                     mimetype: 'video/mp4',
-                    caption: "👑 *DiskWala Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                    caption: `👑 *DiskWala Video* 👑
+
+📦 *File:* ${title}
+📊 *Size:* ${sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream"}
+
+_Downloaded via ＤＭＣ™ Playwright Cloud Engine_`
                 }, { quoted: mek });
             }
         } catch (sendErr) {
@@ -200,8 +219,15 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
         }
     } catch (err) {
         console.error("DiskWala download error:", err.message);
+        const status = err.response?.status;
         const errMsg = err.response?.data?.error || err.message;
-        reply("❌ *DiskWala වීඩියෝව ලබා ගැනීමේ දෝෂයක් සිදු විය: " + errMsg + "*");
+        if (status === 404 || errMsg.includes('404')) {
+            reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");
+        } else if (errMsg.includes('No genuine video stream') || errMsg.includes('ad filtering')) {
+            reply("❌ *DiskWala Stream Error: Ad filter වීමෙන් පසු සැබෑ වීඩියෝ Stream එකක් සොයාගත නොහැකි විය. වීඩියෝව App එකේ පමණක් ක්‍රියාත්මක වන එකක් විය හැක.*");
+        } else {
+            reply("❌ *DiskWala වීඩියෝව ලබා ගැනීමේ දෝෂයක් සිදු විය: " + errMsg + "*");
+        }
     }
 }
 

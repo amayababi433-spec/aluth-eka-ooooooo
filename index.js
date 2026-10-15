@@ -90,6 +90,8 @@ async function useMongoDBAuthState(collection) {
 }
 
 let mongoClient;
+let pluginsLoaded = false;
+let reconnectTimeout = null;
 let collection;
 
 const voteCooldown = new Map();
@@ -144,33 +146,48 @@ async function connectToWA() {
         }
 
         if (connection === 'close') {
-            let reason = lastDisconnect.error?.output?.statusCode;
-            let shouldReconnect = (reason !== DisconnectReason.loggedOut);
-            if (shouldReconnect) {
-                console.log(`âš ï¸ Reconnecting... (Reason: ${reason})`);
-                setTimeout(() => {
-                    console.log('Restarting process to reconnect cleanly...');
-                    process.exit(1);
-                }, 3000);
+            const reason = lastDisconnect?.error?.output?.statusCode;
+            const isLoggedOut = (reason === DisconnectReason.loggedOut || reason === 401);
+            const isReplaced = (reason === DisconnectReason.connectionReplaced || reason === 440);
+
+            if (isLoggedOut) {
+                console.log('❌ Session Logged out. Rescan QR.');
+            } else if (isReplaced) {
+                console.log(`⚠️ Connection Replaced (Reason: 440). Active elsewhere or rolling redeploy. Reconnecting in 10s without killing container...`);
+                if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                reconnectTimeout = setTimeout(() => {
+                    connectToWA().catch(err => console.log('Reconnection Error:', err));
+                }, 10000);
             } else {
-                console.log('âŒ Session Logged out. Rescan QR.');
+                console.log(`⚠️ Connection closed (Reason: ${reason || 'unknown'}). Reconnecting in 5s...`);
+                if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                reconnectTimeout = setTimeout(() => {
+                    connectToWA().catch(err => console.log('Reconnection Error:', err));
+                }, 5000);
             }
         } else if (connection === 'open') {
-            console.log('âœ… Connected to WhatsApp!');
+            console.log('✅ Connected to WhatsApp!');
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
             
-            const pluginsDir = path.join(__dirname, 'plugins');
-            if (fs.existsSync(pluginsDir)) {
-                 const plugins = fs.readdirSync(pluginsDir);
-                 plugins.forEach(file => {
-                     if (path.extname(file).toLowerCase() === '.js') {
-                         try {
-                             require(path.join(pluginsDir, file));
-                         } catch (e) {
-                             console.log(`âŒ Error loading ${file}: ${e.message}`);
+            if (!pluginsLoaded) {
+                const pluginsDir = path.join(__dirname, 'plugins');
+                if (fs.existsSync(pluginsDir)) {
+                     const plugins = fs.readdirSync(pluginsDir);
+                     plugins.forEach(file => {
+                         if (path.extname(file).toLowerCase() === '.js') {
+                             try {
+                                 require(path.join(pluginsDir, file));
+                             } catch (e) {
+                                 console.log(`❌ Error loading ${file}: ${e.message}`);
+                             }
                          }
-                     }
-                 });
-                 console.log("âœ… Plugins Loaded!");
+                     });
+                     console.log("✅ Plugins Loaded!");
+                     pluginsLoaded = true;
+                }
             }
         }
     });

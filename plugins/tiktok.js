@@ -113,10 +113,17 @@ async function scrapeTikWMPost(tiktokUrl) {
         const res = await axios.post('https://www.tikwm.com/api/', params.toString(), {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
                 'Referer': 'https://www.tikwm.com/',
                 'Origin': 'https://www.tikwm.com',
-                'Accept': 'application/json, text/javascript, */*; q=0.01'
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'X-Requested-With': 'XMLHttpRequest',
+                'sec-ch-ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin'
             },
             timeout: 12000
         });
@@ -137,8 +144,17 @@ async function scrapeTikWMGet(tiktokUrl) {
     try {
         const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}&hd=1`, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://www.tikwm.com/'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+                'Referer': 'https://www.tikwm.com/',
+                'Origin': 'https://www.tikwm.com',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'X-Requested-With': 'XMLHttpRequest',
+                'sec-ch-ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin'
             },
             timeout: 12000
         });
@@ -153,6 +169,35 @@ async function scrapeTikWMGet(tiktokUrl) {
 }
 
 /**
+ * ENGINE 4: Siputzx TikTok Cloud Fallback (Bypasses Datacenter IP 403 blocks)
+ */
+async function scrapeSiputzxTikTok(tiktokUrl) {
+    try {
+        const res = await axios.get(`https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(tiktokUrl)}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+            },
+            timeout: 12000
+        });
+
+        if (res.data && res.data.status && res.data.data) {
+            const d = res.data.data;
+            return {
+                title: d.title || "TikTok Video",
+                author: { nickname: d.author?.name || "TikTok Creator" },
+                play: d.nowm || d.watermark,
+                hdplay: d.hd || d.nowm || d.watermark,
+                music: d.music || d.audio,
+                source: "Siputzx API"
+            };
+        }
+    } catch (e) {
+        console.log("[TIKTOK ENGINE 4 SIPUTZX FAIL]:", e.message);
+    }
+    return null;
+}
+
+/**
  * Master Resolver: Runs multi-engine cascade
  */
 async function fetchTikTokData(rawUrl) {
@@ -162,13 +207,17 @@ async function fetchTikTokData(rawUrl) {
     const data1 = await scrapeSSSTik(cleanUrl);
     if (data1 && (data1.play || data1.hdplay || data1.music)) return data1;
 
-    // 2. Try TikWM POST
+    // 2. Try TikWM POST (With Full Chrome Anti-403 Headers)
     const data2 = await scrapeTikWMPost(cleanUrl);
     if (data2 && (data2.play || data2.hdplay || data2.music)) return data2;
 
-    // 3. Try TikWM GET
+    // 3. Try TikWM GET (With Full Chrome Anti-403 Headers)
     const data3 = await scrapeTikWMGet(cleanUrl);
     if (data3 && (data3.play || data3.hdplay || data3.music)) return data3;
+
+    // 4. Try Siputzx Cloud Fallback
+    const data4 = await scrapeSiputzxTikTok(cleanUrl);
+    if (data4 && (data4.play || data4.hdplay || data4.music)) return data4;
 
     return null;
 }
