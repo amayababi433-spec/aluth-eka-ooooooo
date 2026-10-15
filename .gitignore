@@ -6,3 +6,12 @@ session/
 
 temp_base.jpg
 test_anim*.webp
+
+# Local development & Python caches
+__pycache__/
+*.pyc
+*.py
+run_bot.bat
+Modelfile.dmc
+gate_bypass.sh
+manual_update_guide.md

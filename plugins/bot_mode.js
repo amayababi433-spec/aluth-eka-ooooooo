@@ -5,22 +5,27 @@ let modeCollection;
 
 async function getModeDB() {
     if (!modeCollection) {
-        const client = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 10 });
-        await client.connect();
-        modeCollection = client.db('whatsapp_bot').collection('bot_settings');
-        
-        const settings = await modeCollection.findOne({ _id: "bot_mode" });
-        if (settings && settings.mode) {
-            global.BOT_MODE = settings.mode;
-        } else {
-            global.BOT_MODE = "public"; // Default
+        try {
+            const client = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+            await client.connect();
+            modeCollection = client.db('whatsapp_bot').collection('bot_settings');
+            
+            const settings = await modeCollection.findOne({ _id: "bot_mode" });
+            if (settings && settings.mode) {
+                global.BOT_MODE = settings.mode;
+            } else {
+                global.BOT_MODE = "public"; // Default
+            }
+        } catch (err) {
+            console.log("[bot_mode] DB Connect Warning, defaulting to public mode:", err.message);
+            global.BOT_MODE = "public";
         }
     }
     return modeCollection;
 }
 
-// Load it on startup
-getModeDB().catch(console.error);
+// Load it on startup safely
+getModeDB().catch(() => { global.BOT_MODE = "public"; });
 
 cmd({
     pattern: "public",
