@@ -92,6 +92,7 @@ async function useMongoDBAuthState(collection) {
 let mongoClient;
 let pluginsLoaded = false;
 let reconnectTimeout = null;
+let currentSock = null;
 let collection;
 
 const voteCooldown = new Map();
@@ -103,7 +104,16 @@ global.activePolls = new Map();
 setInterval(() => global.activePolls.clear(), 3600000);
 
 async function connectToWA() {
-    console.log("ðŸš€ Starting Sew Queen Bot...");
+    console.log("🚀 Starting Sew Queen Bot...");
+
+    if (currentSock) {
+        try {
+            currentSock.ev.removeAllListeners();
+            currentSock.ws?.close();
+            currentSock.end?.(undefined);
+        } catch (e) {}
+        currentSock = null;
+    }
 
     if (!mongoClient) {
         if (!process.env.MONGODB_URI) {
@@ -136,6 +146,8 @@ async function connectToWA() {
         generateHighQualityLinkPreview: false,
         markOnlineOnConnect: true
     });
+
+    currentSock = sock;
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;

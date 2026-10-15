@@ -19,6 +19,20 @@ const getFBInfo = require('@renpwn/fb-downloader');
  * Intelligent Facebook URL Extractor:
  * Extracts clean Facebook URL from any dirty text, multi-line string, or link preview.
  */
+async function safeSend(conn, jid, content, options) {
+    try {
+        if (!conn) return null;
+        return await conn.sendMessage(jid, content, options);
+    } catch (err) {
+        if (err.message && (err.message.includes('Connection Closed') || err.message.includes('closed') || err.message.includes('WebSocket') || err.message.includes('not opened'))) {
+            console.log(`[FB MSG SUPPRESSED]: Socket not ready (${err.message})`);
+            return null;
+        }
+        console.error(`[FB SEND ERROR]:`, err.message);
+        return null;
+    }
+}
+
 function isPlayableVideo(url) {
     if (!url || typeof url !== 'string') return false;
     const lower = url.toLowerCase();
@@ -171,6 +185,9 @@ async function scrapeSnapSave(fbUrl) {
         }
     } catch (e) {
         console.log("[FB ENGINE 1 SNAPSAVE FAIL]:", e.message);
+        if (e.message && e.message.toLowerCase().includes('private')) {
+            return { isPrivate: true, title: "Private Facebook Media" };
+        }
     }
     return null;
 }
@@ -280,6 +297,7 @@ async function fetchFacebookData(rawUrl) {
 
     // 1. Try SnapSave (Best for all Video qualities and Photos)
     const data1 = await scrapeSnapSave(cleanUrl);
+    if (data1?.isPrivate) return data1;
     if (data1 && (data1.hd || data1.sd || (data1.photos && data1.photos.length > 0))) return data1;
 
     // 2. Try Siputzx API (Fast cloud stream provider)
@@ -305,8 +323,12 @@ async function processFacebookDownload(conn, mek, from, validUrl, forceFormat = 
         const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
         const data = await fetchFacebookData(validUrl);
 
+        if (data?.isPrivate) {
+            return await safeSend(conn, from, { text: "⚠️ *මෙම Facebook වීඩියෝව Private එකක් බැවින් Download කළ නොහැක. කරුණාකර Public ලින්ක් එකක් ලබා දෙන්න.*" }, { quoted: mek });
+        }
+
         if (!data || (!data.hd && !data.sd && (!data.photos || data.photos.length === 0))) {
-            return conn.sendMessage(from, { text: "❌ *Facebook මාධ්‍යය සොයාගත නොහැකි විය. කරුණාකර ලින්ක් එක නිවැරදි දැයි සහ එය Public දැයි පරීක්ෂා කරන්න.*" }, { quoted: mek });
+            return await safeSend(conn, from, { text: "❌ *Facebook මාධ්‍යය සොයාගත නොහැකි විය. කරුණාකර ලින්ක් එක නිවැරදි දැයි සහ එය Public දැයි පරීක්ෂා කරන්න.*" }, { quoted: mek });
         }
 
         const cleanTitle = (data.title || "Facebook Media").replace(/[^\w\s\u0D80-\u0DFF-]/g, '').trim() || "Facebook Media";
@@ -315,7 +337,7 @@ async function processFacebookDownload(conn, mek, from, validUrl, forceFormat = 
         if (data.photos && data.photos.length > 0 && forceFormat !== 'video' && forceFormat !== 'hd' && forceFormat !== 'sd' && forceFormat !== 'mp3') {
             for (let i = 0; i < Math.min(data.photos.length, 5); i++) {
                 const photoUrl = data.photos[i];
-                await conn.sendMessage(from, {
+                await safeSend(conn, from, {
                     image: { url: photoUrl },
                     caption: `👑 *${cleanTitle}* 👑\n\n📸 *Facebook Photo*\n\n_Downloaded via ＤＭＣ™ Core Engine_`
                 }, { quoted: mek });
@@ -330,9 +352,9 @@ async function processFacebookDownload(conn, mek, from, validUrl, forceFormat = 
                 return conn.sendMessage(from, { text: "❌ *Audio Stream එක ලබා ගැනීමට නොහැකි විය.*" }, { quoted: mek });
             }
 
-            await conn.sendMessage(from, { text: "⏳ *Facebook Audio (MP3) සකසමින් පවතී... කරුණාකර රැඳී සිටින්න.*" }, { quoted: mek });
+            await safeSend(conn, from, { text: "⏳ *Facebook Audio (MP3) සකසමින් පවතී... කරුණාකර රැඳී සිටින්න.*" }, { quoted: mek });
 
-            await conn.sendMessage(from, {
+            await safeSend(conn, from, {
                 audio: { url: streamUrl },
                 mimetype: 'audio/mpeg',
                 fileName: `${cleanTitle.slice(0, 40)}.mp3`,
@@ -349,7 +371,7 @@ async function processFacebookDownload(conn, mek, from, validUrl, forceFormat = 
         if (!videoUrl) {
             // If no video URL but has photo, fallback to photo
             if (data.photos && data.photos.length > 0) {
-                return await conn.sendMessage(from, {
+                return await safeSend(conn, from, {
                     image: { url: data.photos[0] },
                     caption: `👑 *${cleanTitle}* 👑\n\n📸 *Facebook Photo*\n\n_Downloaded via ＤＭＣ™ Core Engine_`
                 }, { quoted: mek });
@@ -360,13 +382,13 @@ async function processFacebookDownload(conn, mek, from, validUrl, forceFormat = 
         const isHD = (videoUrl === data.hd && data.hd !== data.sd);
         const formatLabel = isHD ? "HD Quality" : "SD Quality";
 
-        await conn.sendMessage(from, { text: `⏳ *Facebook වීඩියෝව (${formatLabel}) Download වෙමින් පවතී...*` }, { quoted: mek });
+        await safeSend(conn, from, { text: `⏳ *Facebook වීඩියෝව (${formatLabel}) Download වෙමින් පවතී...*` }, { quoted: mek });
 
         const tapMp3Prompt = botNum 
             ? `\n\n👉 🎵 *Tap MP3 Link:*\nhttps://wa.me/${botNum}?text=.fbmp3%20${encodeURIComponent(validUrl)}` 
             : '';
 
-        await conn.sendMessage(from, {
+        await safeSend(conn, from, {
             video: { url: videoUrl },
             caption: `👑 *${cleanTitle}* 👑\n\n` +
                      `🎬 *Quality:* ${formatLabel}\n\n` +
@@ -483,7 +505,7 @@ cmd({
             ? "⏳ *Facebook Photo එක හඳුනාගන්නා ලදී. Download වෙමින් පවතී...*" 
             : "⏳ *Facebook ලින්ක් එක හඳුනාගන්නා ලදී. Download වෙමින් පවතී...*";
 
-        await reply(statusMsg);
+        await safeSend(conn, from, { text: statusMsg }, { quoted: mek });
         await processFacebookDownload(conn, mek, from, validUrl, 'auto');
 
     } catch (err) {
