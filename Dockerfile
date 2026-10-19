@@ -9,23 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up user with UID 1000 required by Hugging Face Spaces
-RUN useradd -m -u 1000 user
-USER user
-ENV HOME=/home/user \
-    PATH=/home/user/.local/bin:$PATH \
-    PORT=7860 \
-    NODE_ENV=production
+WORKDIR /app
 
-WORKDIR $HOME/app
-
-# Copy dependency definitions and install
-COPY --chown=user package*.json ./
-RUN npm install --production
+# Copy dependency definitions and install dependencies
+COPY package*.json ./
+RUN npm install
 
 # Copy application source code
-COPY --chown=user . .
+COPY . .
 
-EXPOSE 7860
+ENV PORT=10000
+EXPOSE 10000
 
 CMD ["node", "index.js"]
