@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>👑 DMC™ BOT CONTROL ROOM • Pasindu Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080c14;
+            --bg-card: rgba(15, 23, 42, 0.78);
+            --bg-card-hover: rgba(30, 41, 59, 0.85);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(56, 189, 248, 0.35);
+            --primary: #06b6d4;
+            --primary-glow: rgba(6, 182, 212, 0.3);
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.3);
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.3);
+            --purple: #8b5cf6;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(6, 182, 212, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 60%);
+            background-attachment: fixed;
+        }
+
+        /* Container */
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 16px;
+            padding-bottom: 80px;
+        }
+
+        /* Glassmorphism card */
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            transition: all 0.25s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Top Header */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            border-radius: var(--radius-lg);
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            position: sticky;
+            top: 10px;
+            z-index: 100;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 0 16px var(--primary-glow);
+        }
+
+        .brand-text h1 {
+            font-size: 1.05rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(90deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand-text span {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+            display: block;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            border: 1px solid transparent;
+        }
+
+        .badge-live {
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.25);
+        }
+
+        .badge-offline {
+            background: rgba(239, 68, 68, 0.12);
+            color: var(--danger);
+            border-color: rgba(239, 68, 68, 0.25);
+        }
+
+        .badge-mode {
+            background: rgba(6, 182, 212, 0.12);
+            color: var(--primary);
+            border-color: rgba(6, 182, 212, 0.25);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .badge-mode:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            display: inline-block;
+            box-shadow: 0 0 8px currentColor;
+            animation: pulse 1.6s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+
+        .btn-logout {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--danger);
+            border-radius: var(--radius-sm);
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-logout:hover {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        /* Nav Tabs */
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 6px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            flex: 1;
+            min-width: 110px;
+            padding: 10px 16px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.2));
+            color: #fff;
+            border: 1px solid var(--border-highlight);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Metric Grid */
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .metric-val {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .metric-sub {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* Progress Bar */
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #06b6d4, #10b981);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+
+        /* Section Title */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Forms & Inputs */
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .input-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px 14px;
+            background: rgba(8, 12, 20, 0.85);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-main);
+            font-size: 0.9rem;
+            font-family: inherit;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        select:focus,
+        textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 12px var(--primary-glow);
+        }
+
+        textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #06b6d4, #0284c7);
+            color: #fff;
+            box-shadow: 0 4px 14px var(--primary-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px var(--primary-glow);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+            box-shadow: 0 4px 14px var(--success-glow);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+            box-shadow: 0 4px 14px var(--danger-glow);
+        }
+
+        .btn-ghost {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-block {
+            width: 100%;
+        }
+
+        /* Owner Hub Grid */
+        .owner-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        /* Blocked List Table */
+        .table-wrap {
+            overflow-x: auto;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            margin-top: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text-muted);
+            padding: 10px 14px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Commands Explorer (.menu) */
+        .search-container {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 240px;
+            position: relative;
+        }
+
+        .search-box input {
+            padding-left: 38px;
+        }
+
+        .search-box::before {
+            content: "🔍";
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.9rem;
+            opacity: 0.6;
+        }
+
+        .category-chips {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            margin-bottom: 16px;
+        }
+
+        .chip {
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .chip.active, .chip:hover {
+            background: var(--primary);
+            color: #000;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .commands-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+        }
+
+        .cmd-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+
+        .cmd-card:hover {
+            border-color: var(--border-highlight);
+            transform: translateY(-2px);
+            background: rgba(30, 41, 59, 0.6);
+        }
+
+        .cmd-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .cmd-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #38bdf8;
+        }
+
+        .cmd-badge {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-muted);
+        }
+
+        .cmd-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            min-height: 2.2em;
+        }
+
+        .cmd-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 4px;
+        }
+
+        .cmd-alias {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .btn-copy {
+            padding: 5px 10px;
+            font-size: 0.72rem;
+            background: rgba(56, 189, 248, 0.12);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-copy:hover {
+            background: #38bdf8;
+            color: #000;
+        }
+
+        /* Login Modal / Screen */
+        .login-wrap {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 8, 15, 0.92);
+            backdrop-filter: blur(18px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 1000;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid var(--border-highlight);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 20px var(--primary-glow);
+            border-radius: 20px;
+            padding: 32px 26px;
+            text-align: center;
+        }
+
+        .login-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 16px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            box-shadow: 0 0 24px var(--primary-glow);
+        }
+
+        .login-card h2 {
+            font-size: 1.4rem;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .login-card p {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            margin-bottom: 24px;
+        }
+
+        /* Toast Alert */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: var(--radius-md);
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            font-size: 0.88rem;
+            font-weight: 600;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast-success {
+            border-color: var(--success);
+            box-shadow: 0 0 16px var(--success-glow);
+        }
+
+        .toast-error {
+            border-color: var(--danger);
+            box-shadow: 0 0 16px var(--danger-glow);
+        }
+
+        /* Mobile Adjustments */
+        @media (max-width: 640px) {
+            .app-container {
+                padding: 10px;
+            }
+            header {
+                padding: 10px 14px;
+                top: 4px;
+            }
+            .brand-text h1 {
+                font-size: 0.95rem;
+            }
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+            .owner-grid {
+                grid-template-columns: 1fr;
+            }
+            .commands-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <span id="toastIcon">✨</span>
+        <span id="toastMsg">Notification message</span>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="login-wrap" style="display: none;">
+        <div class="login-card">
+            <div class="login-icon">👑</div>
+            <h2>DMC™ Bot Admin</h2>
+            <p>පරිපාලක පැනලයට පිවිසීමට ඔබගේ Login විස්තර ඇතුළත් කරන්න.</p>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="input-group" style="text-align: left;">
+                    <label>Admin Username</label>
+                    <input type="text" id="loginUser" value="pasindu" placeholder="pasindu" required autocomplete="username">
+                </div>
+
+                <div class="input-group" style="text-align: left;">
+                    <label>Admin Password</label>
+                    <input type="password" id="loginPass" value="787898" placeholder="787898" required autocomplete="current-password">
+                </div>
+
+                <div id="loginErr" style="color: var(--danger); font-size: 0.8rem; margin-bottom: 12px; display: none;"></div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+                    🚀 Login to Admin Panel
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container" id="appMain" style="display: none;">
+        <!-- Header -->
+        <header>
+            <div class="header-brand">
+                <div class="brand-icon">👑</div>
+                <div class="brand-text">
+                    <h1>DMC™ BOT CONTROL</h1>
+                    <span id="hdrBotName">Sew Queen MD</span>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <div id="connBadge" class="badge badge-offline">
+                    <span class="pulse-dot"></span>
+                    <span id="connText">Checking...</span>
+                </div>
+
+                <div id="modeBadge" class="badge badge-mode" onclick="toggleMode()" title="Tap to Toggle Public/Private">
+                    <span id="modeText">🌍 Public</span>
+                </div>
+
+                <button class="btn-logout" onclick="handleLogout()" title="Logout">🚪 Exit</button>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchTab('overview')">
+                📊 Dashboard
+            </button>
+            <button class="tab-btn" onclick="switchTab('owner')">
+                👑 Owner Hub
+            </button>
+            <button class="tab-btn" onclick="switchTab('commands')">
+                📜 .menu Explorer (<span id="tabCmdCount">104</span>)
+            </button>
+        </div>
+
+        <!-- TAB 1: OVERVIEW -->
+        <div id="tab-overview" class="tab-content">
+            <div class="metric-grid">
+                <!-- Status Card -->
+                <div class="glass-card metric-card">
+                    <div class="metric-label">📱 WhatsApp Bot Status</div>
+                    <div class="metric-val" id="metricConnStatus">Connecting...</div>
+                    <div class="metric-sub" id="metricBotNum">Active Phone: Loading...</div>
+                </div>
+
+                <!-- Mode Card -->
+                <div class="glass-card metric-card">
+                    <div class="metric-label">🔒 Current Bot Mode</div>
+                    <div class="metric-val" id="metricBotMode" style="color: var(--primary);">PUBLIC</div>
+                    <div class="metric-sub">Anyone can access commands</div>
+                </div>
+
+                <!-- Uptime Card -->
+                <div class="glass-card metric-card">
+                    <div class="metric-label">⏱️ Live Bot Uptime</div>
+                    <div class="metric-val" id="metricUptime">0h 0m 0s</div>
+                    <div class="metric-sub" id="metricPlatform">Node: v20.x</div>
+                </div>
+
+                <!-- RAM Card -->
+                <div class="glass-card metric-card">
+                    <div class="metric-label">💾 Memory Usage (RAM)</div>
+                    <div class="metric-val" id="metricRam">0 MB</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="ramProgress"></div>
+                    </div>
+                    <div class="metric-sub" id="metricRamSub">Heap: 0 MB / Total: 0 MB</div>
+                </div>
+            </div>
+
+            <!-- Quick Owner Control Pill Bar -->
+            <div class="glass-card" style="margin-bottom: 24px;">
+                <div class="section-header">
+                    <div class="section-title">⚡ Fast Owner Controls</div>
+                    <span style="font-size: 0.78rem; color: var(--text-dim);">One-tap execution</span>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-ghost" onclick="setBotMode('public')">
+                        🌍 Set PUBLIC Mode
+                    </button>
+                    <button class="btn btn-ghost" onclick="setBotMode('private')">
+                        🔒 Set PRIVATE Mode (Owner Only)
+                    </button>
+                    <button class="btn btn-ghost" onclick="reconnectBot()">
+                        🔄 Reconnect WhatsApp
+                    </button>
+                    <button class="btn btn-ghost" onclick="switchTab('commands')">
+                        📖 View All Commands (.menu)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: OWNER HUB -->
+        <div id="tab-owner" class="tab-content" style="display: none;">
+            <div class="owner-grid">
+
+                <!-- 1. Send Direct WhatsApp Message -->
+                <div class="glass-card">
+                    <div class="section-title" style="margin-bottom: 12px;">
+                        💬 Send WhatsApp Message
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
+                        Bot එක හරහා ඕනෑම WhatsApp අංකයකට කෙලින්ම Message යවන්න.
+                    </p>
+
+                    <form onsubmit="handleSendMessage(event)">
+                        <div class="input-group">
+                            <label>Target Phone Number (or Group JID)</label>
+                            <input type="text" id="sendTarget" placeholder="94717884174 (හෝ 071...)" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Message Text</label>
+                            <textarea id="sendMsg" placeholder="ඔබට යැවීමට අවශ්‍ය පණිවිඩය මෙහි ටයිප් කරන්න..." required></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block" id="btnSend">
+                            🚀 Send Message
+                        </button>
+                    </form>
+                </div>
+
+                <!-- 2. Broadcast to All Participating Groups -->
+                <div class="glass-card">
+                    <div class="section-title" style="margin-bottom: 12px;">
+                        📢 Group Broadcast
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
+                        Bot එක සාමාජිකයෙකු වී සිටින සියලුම WhatsApp Groups වලට එකවර Broadcast කරන්න.
+                    </p>
+
+                    <form onsubmit="handleBroadcast(event)">
+                        <div class="input-group">
+                            <label>Broadcast Message</label>
+                            <textarea id="broadcastMsg" placeholder="සියලු Groups වලට යැවිය යුතු පණිවිඩය..." required></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-success btn-block" id="btnBroadcast">
+                            📢 Send Broadcast to Groups
+                        </button>
+                    </form>
+                </div>
+
+                <!-- 3. Block / Unblock Manager -->
+                <div class="glass-card" style="grid-column: 1 / -1;">
+                    <div class="section-header">
+                        <div class="section-title">
+                            🚫 Blocklist Manager (.bclz / .bfrnd)
+                        </div>
+                        <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.8rem;" onclick="unblockTarget('all')">
+                            🗑️ Clear Entire Blocklist
+                        </button>
+                    </div>
+
+                    <form onsubmit="handleBlock(event)" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
+                        <input type="text" id="blockNum" placeholder="Phone Number (e.g. 9477...)" style="flex: 2; min-width: 180px;" required>
+                        <select id="blockCat" style="flex: 1; min-width: 140px;">
+                            <option value="clz">CLZ</option>
+                            <option value="friend">FRIEND</option>
+                        </select>
+                        <button type="submit" class="btn btn-danger" style="min-width: 140px;">
+                            🚫 Block Number
+                        </button>
+                    </form>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Phone Number</th>
+                                    <th>Category</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="blockTableBody">
+                                <tr>
+                                    <td colspan="4" style="text-align: center; color: var(--text-dim); padding: 18px;">
+                                        Loading blocked numbers...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- TAB 3: COMMANDS (.MENU EXPLORER) -->
+        <div id="tab-commands" class="tab-content" style="display: none;">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">📜 Bot Commands Menu</div>
+                    <span style="font-size: 0.8rem; color: var(--text-dim);">
+                        WhatsApp හි .menu මඟින් ලැබෙන සියලු Commands මෙතැනින් පිරික්සන්න
+                    </span>
+                </div>
+            </div>
+
+            <!-- Search Box & Filter Chips -->
+            <div class="search-container">
+                <div class="search-box">
+                    <input type="text" id="cmdSearch" placeholder="Search commands (e.g. fb, yt, ai, status)..." oninput="filterCommands()">
+                </div>
+            </div>
+
+            <div class="category-chips" id="categoryChips">
+                <div class="chip active" onclick="selectCategory('all', this)">🌟 All (<span id="countAll">104</span>)</div>
+            </div>
+
+            <!-- Commands Cards Grid -->
+            <div class="commands-grid" id="commandsGrid">
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-dim);">
+                    Loading bot commands...
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        const API_TOKEN_KEY = 'dmc_admin_token';
+        let allCategories = [];
+        let allCommands = [];
+        let activeCategory = 'all';
+        let statusPollInterval = null;
+
+        // Init
+        window.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem(API_TOKEN_KEY);
+            if (token) {
+                verifyAndLoad(token);
+            } else {
+                showLogin();
+            }
+        });
+
+        function showLogin() {
+            document.getElementById('loginModal').style.display = 'flex';
+            document.getElementById('appMain').style.display = 'none';
+        }
+
+        function showApp() {
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('appMain').style.display = 'block';
+            startLivePolling();
+            loadCommands();
+            loadBlockedList();
+        }
+
+        async function verifyAndLoad(token) {
+            try {
+                const res = await fetch('/api/verify', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    showApp();
+                } else {
+                    localStorage.removeItem(API_TOKEN_KEY);
+                    showLogin();
+                }
+            } catch (e) {
+                // Network issue or offline, still show app if cached
+                showApp();
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('loginUser').value.trim();
+            const p = document.getElementById('loginPass').value.trim();
+            const errDiv = document.getElementById('loginErr');
+            const btn = document.getElementById('loginBtn');
+
+            errDiv.style.display = 'none';
+            btn.disabled = true;
+            btn.innerText = 'Verifying...';
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                const data = await res.json();
+                if (data.success && data.token) {
+                    localStorage.setItem(API_TOKEN_KEY, data.token);
+                    showToast('✅ Login Successful! Welcome Pasindu.', 'success');
+                    showApp();
+                } else {
+                    errDiv.innerText = data.error || 'Invalid credentials';
+                    errDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errDiv.innerText = 'Server error. Please try again.';
+                errDiv.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '🚀 Login to Admin Panel';
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem(API_TOKEN_KEY);
+            if (statusPollInterval) clearInterval(statusPollInterval);
+            showLogin();
+            showToast('👋 Logged out successfully.', 'success');
+        }
+
+        function authHeaders() {
+            const token = localStorage.getItem(API_TOKEN_KEY);
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+        }
+
+        // Tab Navigation
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+
+            const content = document.getElementById(`tab-${tabId}`);
+            if (content) content.style.display = 'block';
+
+            // Find active tab button
+            const btns = document.querySelectorAll('.tab-btn');
+            if (tabId === 'overview') btns[0].classList.add('active');
+            if (tabId === 'owner') {
+                btns[1].classList.add('active');
+                loadBlockedList();
+            }
+            if (tabId === 'commands') btns[2].classList.add('active');
+        }
+
+        // Live Polling
+        function startLivePolling() {
+            fetchStatus();
+            if (statusPollInterval) clearInterval(statusPollInterval);
+            statusPollInterval = setInterval(fetchStatus, 4000);
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const d = await res.json();
+                if (!d.success) return;
+
+                // Header badge
+                const connBadge = document.getElementById('connBadge');
+                const connText = document.getElementById('connText');
+                if (d.connected) {
+                    connBadge.className = 'badge badge-live';
+                    connText.innerText = `Online (${d.botNumber || 'WA'})`;
+                } else {
+                    connBadge.className = 'badge badge-offline';
+                    connText.innerText = 'Offline / Connecting';
+                }
+
+                // Mode
+                const modeText = document.getElementById('modeText');
+                const isPub = (d.mode || 'public').toLowerCase() === 'public';
+                modeText.innerText = isPub ? '🌍 Public' : '🔒 Private';
+
+                // Metrics
+                document.getElementById('metricConnStatus').innerText = d.connected ? '🟢 ONLINE' : '🔴 CONNECTING';
+                document.getElementById('metricConnStatus').style.color = d.connected ? 'var(--success)' : 'var(--danger)';
+                document.getElementById('metricBotNum').innerText = d.botNumber ? `+${d.botNumber}` : 'Waiting for connection...';
+
+                document.getElementById('metricBotMode').innerText = (d.mode || 'public').toUpperCase();
+                document.getElementById('metricBotMode').style.color = isPub ? 'var(--primary)' : 'var(--warning)';
+
+                document.getElementById('metricUptime').innerText = d.uptimeFmt || '0s';
+                document.getElementById('metricPlatform').innerText = `OS: ${d.platform || ''} • Node: ${d.nodeVersion || ''}`;
+
+                if (d.ram) {
+                    document.getElementById('metricRam').innerText = `${d.ram.heapUsedMB} MB`;
+                    document.getElementById('metricRamSub').innerText = `Heap: ${d.ram.heapUsedMB}MB / Total: ${d.ram.totalMemMB}MB`;
+                    const pct = Math.min(100, Math.round((parseFloat(d.ram.heapUsedMB) / 512) * 100));
+                    document.getElementById('ramProgress').style.width = `${pct}%`;
+                }
+
+                if (d.totalCommands) {
+                    document.getElementById('tabCmdCount').innerText = d.totalCommands;
+                    document.getElementById('countAll').innerText = d.totalCommands;
+                }
+            } catch (e) {
+                console.log('Poll err:', e);
+            }
+        }
+
+        // Bot Mode Toggle
+        async function toggleMode() {
+            const current = document.getElementById('modeText').innerText.includes('Public') ? 'public' : 'private';
+            const next = current === 'public' ? 'private' : 'public';
+            await setBotMode(next);
+        }
+
+        async function setBotMode(mode) {
+            try {
+                const res = await fetch('/api/owner/mode', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ mode })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(`✅ Bot Mode updated to ${mode.toUpperCase()}!`, 'success');
+                    fetchStatus();
+                } else {
+                    showToast(d.error || 'Failed to update mode', 'error');
+                }
+            } catch (err) {
+                showToast('Network error setting mode', 'error');
+            }
+        }
+
+        // Direct WhatsApp Message
+        async function handleSendMessage(e) {
+            e.preventDefault();
+            const target = document.getElementById('sendTarget').value.trim();
+            const message = document.getElementById('sendMsg').value.trim();
+            const btn = document.getElementById('btnSend');
+
+            btn.disabled = true;
+            btn.innerText = 'Sending...';
+
+            try {
+                const res = await fetch('/api/owner/send', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ target, message })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast('🚀 WhatsApp Message Sent Successfully!', 'success');
+                    document.getElementById('sendMsg').value = '';
+                } else {
+                    showToast(d.error || 'Failed to send message', 'error');
+                }
+            } catch (err) {
+                showToast('Error sending message', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '🚀 Send Message';
+            }
+        }
+
+        // Group Broadcast
+        async function handleBroadcast(e) {
+            e.preventDefault();
+            const msg = document.getElementById('broadcastMsg').value.trim();
+            const btn = document.getElementById('btnBroadcast');
+
+            if (!confirm('Are you sure you want to broadcast this message to ALL bot groups?')) return;
+
+            btn.disabled = true;
+            btn.innerText = 'Broadcasting...';
+
+            try {
+                const res = await fetch('/api/owner/broadcast', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ message: msg })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(`📢 ${d.message || 'Broadcast complete!'}`, 'success');
+                    document.getElementById('broadcastMsg').value = '';
+                } else {
+                    showToast(d.error || 'Broadcast failed', 'error');
+                }
+            } catch (err) {
+                showToast('Broadcast error', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '📢 Send Broadcast to Groups';
+            }
+        }
+
+        // Blocklist Manager
+        async function loadBlockedList() {
+            const tbody = document.getElementById('blockTableBody');
+            try {
+                const res = await fetch('/api/owner/blocks', { headers: authHeaders() });
+                const d = await res.json();
+                if (!d.success || !d.list || d.list.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-dim); padding: 18px;">No numbers currently blocked.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = d.list.map((item, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td style="color: #38bdf8;">+${item.number}</td>
+                        <td><span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">${item.category}</span></td>
+                        <td>
+                            <button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.75rem;" onclick="unblockTarget('${item.number}')">
+                                🗑️ Unblock
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--danger); padding: 18px;">Error loading blocked list</td></tr>`;
+            }
+        }
+
+        async function handleBlock(e) {
+            e.preventDefault();
+            const num = document.getElementById('blockNum').value.trim();
+            const cat = document.getElementById('blockCat').value;
+
+            try {
+                const res = await fetch('/api/owner/block', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ number: num, category: cat })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(d.message || 'Number blocked!', 'success');
+                    document.getElementById('blockNum').value = '';
+                    loadBlockedList();
+                } else {
+                    showToast(d.error || 'Failed to block', 'error');
+                }
+            } catch (err) {
+                showToast('Error blocking number', 'error');
+            }
+        }
+
+        async function unblockTarget(target) {
+            if (target === 'all' && !confirm('Are you sure you want to clear ALL blocked numbers?')) return;
+
+            try {
+                const res = await fetch('/api/owner/unblock', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ target })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(d.message || 'Unblocked successfully!', 'success');
+                    loadBlockedList();
+                } else {
+                    showToast(d.error || 'Failed to unblock', 'error');
+                }
+            } catch (err) {
+                showToast('Error unblocking', 'error');
+            }
+        }
+
+        // WhatsApp Reconnect
+        async function reconnectBot() {
+            try {
+                const res = await fetch('/api/owner/reconnect', { method: 'POST', headers: authHeaders() });
+                const d = await res.json();
+                showToast('🔄 Reconnect signal sent to Baileys!', 'success');
+                setTimeout(fetchStatus, 3000);
+            } catch (err) {
+                showToast('Error sending reconnect signal', 'error');
+            }
+        }
+
+        // Load & Render Commands (.menu Explorer)
+        async function loadCommands() {
+            try {
+                const res = await fetch('/api/commands');
+                const d = await res.json();
+                if (!d.success) return;
+
+                allCategories = d.categories || [];
+                allCommands = [];
+                allCategories.forEach(cat => {
+                    cat.commands.forEach(cmd => allCommands.push(cmd));
+                });
+
+                renderChips();
+                renderCommands(allCommands);
+            } catch (e) {
+                console.log('Error loading commands:', e);
+            }
+        }
+
+        function renderChips() {
+            const container = document.getElementById('categoryChips');
+            let html = `<div class="chip active" onclick="selectCategory('all', this)">🌟 All (${allCommands.length})</div>`;
+            allCategories.forEach(cat => {
+                html += `<div class="chip" onclick="selectCategory('${cat.name}', this)">${cat.emoji} ${cat.name.toUpperCase()} (${cat.commands.length})</div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function selectCategory(catName, el) {
+            activeCategory = catName;
+            document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            filterCommands();
+        }
+
+        function filterCommands() {
+            const q = (document.getElementById('cmdSearch').value || '').toLowerCase().trim();
+            let filtered = allCommands;
+
+            if (activeCategory !== 'all') {
+                filtered = filtered.filter(c => c.category === activeCategory);
+            }
+
+            if (q) {
+                filtered = filtered.filter(c => 
+                    c.pattern.toLowerCase().includes(q) ||
+                    (c.desc && c.desc.toLowerCase().includes(q)) ||
+                    (c.alias && c.alias.some(a => a.toLowerCase().includes(q)))
+                );
+            }
+
+            renderCommands(filtered);
+        }
+
+        function renderCommands(list) {
+            const grid = document.getElementById('commandsGrid');
+            if (list.length === 0) {
+                grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-dim);">No matching commands found.</div>`;
+                return;
+            }
+
+            grid.innerHTML = list.map(cmd => {
+                const aliases = cmd.alias && cmd.alias.length ? `[${cmd.alias.join(', ')}]` : '';
+                return `
+                    <div class="cmd-card">
+                        <div>
+                            <div class="cmd-header">
+                                <span class="cmd-name">.${cmd.pattern}</span>
+                                <span class="cmd-badge">${cmd.emoji} ${cmd.category}</span>
+                            </div>
+                            <div class="cmd-desc">${cmd.desc || 'No description provided.'}</div>
+                        </div>
+                        <div class="cmd-footer">
+                            <span class="cmd-alias">${aliases}</span>
+                            <button class="btn-copy" onclick="copyText('.${cmd.pattern}', this)">
+                                📋 Copy
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function copyText(txt, btn) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(txt).then(() => {
+                    const original = btn.innerText;
+                    btn.innerText = 'Copied! ✅';
+                    setTimeout(() => btn.innerText = original, 1600);
+                });
+            } else {
+                const el = document.createElement('textarea');
+                el.value = txt;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                btn.innerText = 'Copied! ✅';
+                setTimeout(() => btn.innerText = '📋 Copy', 1600);
+            }
+        }
+
+        // Toast Helper
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const text = document.getElementById('toastMsg');
+
+            text.innerText = msg;
+            icon.innerText = type === 'success' ? '✨' : '⚠️';
+            t.className = `toast toast-${type} show`;
+
+            setTimeout(() => {
+                t.className = 'toast';
+            }, 3200);
+        }
+    </script>
+</body>
+</html>

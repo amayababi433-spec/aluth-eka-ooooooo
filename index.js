@@ -3,12 +3,39 @@ require('dotenv').config();
 global.blockedUsersCache = new Map();
 const express = require('express');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const config = require('./config');
+const { setupDashboard } = require('./lib/dashboard');
 
 const n8nWebhookUrl = 'http://172.198.152.235:5678/webhook/236fbbcc-f33c-45e1-8c79-60bee0df774f';
 
+let pluginsLoaded = false;
+function loadAllPlugins() {
+    if (pluginsLoaded) return;
+    const pluginsDir = path.join(__dirname, 'plugins');
+    if (fs.existsSync(pluginsDir)) {
+        const plugins = fs.readdirSync(pluginsDir);
+        plugins.forEach(file => {
+            if (path.extname(file).toLowerCase() === '.js') {
+                try {
+                    require(path.join(pluginsDir, file));
+                } catch (e) {
+                    console.log(`❌ Error loading ${file}: ${e.message}`);
+                }
+            }
+        });
+        console.log("✅ Plugins Preloaded for Dashboard & Bot!");
+        pluginsLoaded = true;
+    }
+}
+loadAllPlugins();
+
 const app = express();
-app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(process.env.PORT || 8000, () => console.log('Web server is running to bypass health check'));
+setupDashboard(app);
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => console.log(`🚀 Web server & Admin Dashboard running on port ${PORT}`));
+
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -22,10 +49,7 @@ const {
     getAggregateVotesInPollMessage
 } = require("@whiskeysockets/baileys");
 const { MongoClient } = require('mongodb');
-const fs = require('fs');
 const pino = require("pino");
-const path = require('path');
-const config = require('./config');
 
 const commands = require('./command').commands;
 
@@ -90,9 +114,9 @@ async function useMongoDBAuthState(collection) {
 }
 
 let mongoClient;
-let pluginsLoaded = false;
 let reconnectTimeout = null;
 let currentSock = null;
+global.sock = null;
 let collection;
 
 const voteCooldown = new Map();
@@ -113,6 +137,7 @@ async function connectToWA() {
             currentSock.end?.(undefined);
         } catch (e) {}
         currentSock = null;
+        global.sock = null;
     }
 
     if (!mongoClient) {
@@ -148,12 +173,14 @@ async function connectToWA() {
     });
 
     currentSock = sock;
+    global.sock = sock;
+    global.reconnectWA = connectToWA;
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log("\nðŸ“· QR Code à¶‘à¶š à¶´à·„à·…à·’à¶±à·Š à¶‡à¶­. Scan à¶šà¶»à¶±à·Šà¶±! ðŸ‘‡\n");
+            console.log("\n📷 QR Code එක පහළින් ඇත. Scan කරන්න! 👇\n");
             require('qrcode-terminal').generate(qr, { small: true });
         }
 
@@ -185,21 +212,7 @@ async function connectToWA() {
             }
             
             if (!pluginsLoaded) {
-                const pluginsDir = path.join(__dirname, 'plugins');
-                if (fs.existsSync(pluginsDir)) {
-                     const plugins = fs.readdirSync(pluginsDir);
-                     plugins.forEach(file => {
-                         if (path.extname(file).toLowerCase() === '.js') {
-                             try {
-                                 require(path.join(pluginsDir, file));
-                             } catch (e) {
-                                 console.log(`❌ Error loading ${file}: ${e.message}`);
-                             }
-                         }
-                     });
-                     console.log("✅ Plugins Loaded!");
-                     pluginsLoaded = true;
-                }
+                loadAllPlugins();
             }
         }
     });
