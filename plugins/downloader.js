@@ -7,19 +7,19 @@ const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
 
-// ✅ Render.com Dedicated Fast API + Azure Failover Backup
-const PRIMARY_API = 'https://dmc-downloader-api.onrender.com/api/info';
-const BACKUP_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
+// ✅ Dual-Engine Priority: Azure (Primary: 6.9s Direct Unblocked) + Render.com (Backup Failover)
+const PRIMARY_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
+const BACKUP_API = 'https://dmc-downloader-api.onrender.com/api/info';
 
-// Helper to fetch video or audio info (Render 100% Speed with Azure Failover)
+// Helper to fetch video or audio info (Azure Primary with Render Failover)
 async function fetchFromAzure(videoUrl, type = 'video') {
     try {
         const res = await axios.get(PRIMARY_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
-            timeout: 30000
+            timeout: 20000
         });
         if (res.data && res.data.download_url) return res.data;
     } catch (primaryErr) {
-        console.warn("Render API busy or waking up, switching to Azure backup engine...", primaryErr.message);
+        console.warn("⚠️ Azure Primary API failed/busy, switching to Render backup engine...", primaryErr.message);
     }
     const backupRes = await axios.get(BACKUP_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
         timeout: 60000
