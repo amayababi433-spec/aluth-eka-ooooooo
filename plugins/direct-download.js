@@ -104,18 +104,51 @@ function extractVideoFromHtml(html) {
     return null;
 }
 
-// ✅ Azure Cloud Server Endpoints (Direct High-Speed Playwright Engine)
-const TERABOX_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
-const DISKWALA_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
+// ✅ Dual-Engine Priority: Azure Primary ──► Auto GitHub Actions Cloud Backup
+const TERABOX_AZURE_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
+const DISKWALA_AZURE_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
 
-// Dedicated TeraBox download handler using Azure Playwright Cloud Engine
+let cachedBackupBase = 'https://objective-format-lamp-boutique.trycloudflare.com';
+let lastUrlFetchTime = 0;
+
+async function getBackupBaseUrl() {
+    if (Date.now() - lastUrlFetchTime < 180000 && cachedBackupBase) {
+        return cachedBackupBase;
+    }
+    try {
+        const res = await axios.get('https://raw.githubusercontent.com/dimdtu0-cell/dmc-backup-api/main/api_url.txt?t=' + Date.now(), { timeout: 5000 });
+        if (res.data && res.data.trim().startsWith('https://')) {
+            cachedBackupBase = res.data.trim().replace(/\/$/, '');
+            lastUrlFetchTime = Date.now();
+        }
+    } catch (e) {
+        // fallback to cachedBackupBase
+    }
+    return cachedBackupBase;
+}
+
+// Dedicated TeraBox download handler with Smart Dual-Engine Failover
 async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
     try {
-        await reply("⏳ *TeraBox ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
+        await reply("⏳ *TeraBox ලින්ක් එක හඳුනාගන්නා ලදී. Playwright Cloud Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
-        const res = await axios.get(TERABOX_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 60000
-        });
+        let res;
+        let engineUsed = "Azure Core Engine";
+
+        // 1️⃣ Attempt Primary Azure Cloud Server (25s)
+        try {
+            res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                timeout: 25000
+            });
+            if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
+        } catch (azureErr) {
+            console.warn("⚠️ Azure TeraBox busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
+            engineUsed = "GitHub Actions Backup";
+            const backupBase = await getBackupBaseUrl();
+            res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), {
+                timeout: 45000
+            });
+        }
 
         if (!res.data || !res.data.download_url) {
             return reply("❌ *TeraBox වීඩියෝව ලබා ගැනීමට නොහැකි විය.*");
@@ -136,14 +169,14 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
                     document: { url: data.download_url },
                     mimetype: 'video/mp4',
                     fileName: fileName,
-                    caption: "👑 *TeraBox Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                    caption: "👑 *TeraBox Video (Document)* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown") + "\n\n_Downloaded via ＤＭＣ™ (" + engineUsed + ")_"
                 }, { quoted: mek });
             } else {
                 // Send as Video if <= 100MB
                 await conn.sendMessage(from, {
                     video: { url: data.download_url },
                     mimetype: 'video/mp4',
-                    caption: "👑 *TeraBox Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ Playwright Cloud Engine_"
+                    caption: "👑 *TeraBox Video* 👑\n\n📦 *File:* " + title + "\n📊 *Size:* " + (sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream") + "\n\n_Downloaded via ＤＭＣ™ (" + engineUsed + ")_"
                 }, { quoted: mek });
             }
         } catch (sendErr) {
@@ -157,15 +190,33 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
     }
 }
 
-// Dedicated DiskWala download handler using Azure Playwright Cloud Engine
+// Dedicated DiskWala download handler with Smart Dual-Engine Failover
 async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
     try {
-        await reply("⏳ *DiskWala ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
+        await reply("⏳ *DiskWala ලින්ක් එක හඳුනාගන්නා ලදී. Playwright Cloud Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
-        const res = await axios.get(DISKWALA_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 60000,
-            validateStatus: (status) => status < 500
-        });
+        let res;
+        let engineUsed = "Azure Core Engine";
+
+        // 1️⃣ Attempt Primary Azure Cloud Server (25s)
+        try {
+            res = await axios.get(DISKWALA_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                timeout: 25000,
+                validateStatus: (status) => status < 500
+            });
+            if (res.status === 404 || res.data?.error?.includes('404')) {
+                return reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");
+            }
+            if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
+        } catch (azureErr) {
+            console.warn("⚠️ Azure DiskWala busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
+            engineUsed = "GitHub Actions Backup";
+            const backupBase = await getBackupBaseUrl();
+            res = await axios.get(backupBase + '/api/diskwala?url=' + encodeURIComponent(targetUrl), {
+                timeout: 45000,
+                validateStatus: (status) => status < 500
+            });
+        }
 
         if (res.status === 404 || res.data?.error?.includes('404')) {
             return reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");
@@ -194,24 +245,14 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
                     document: { url: data.download_url },
                     mimetype: 'video/mp4',
                     fileName: fileName,
-                    caption: `👑 *DiskWala Video (Document)* 👑
-
-📦 *File:* ${title}
-📊 *Size:* ${sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown"}
-
-_Downloaded via ＤＭＣ™ Playwright Cloud Engine_`
+                    caption: `👑 *DiskWala Video (Document)* 👑\n\n📦 *File:* ${title}\n📊 *Size:* ${sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Unknown"}\n\n_Downloaded via ＤＭＣ™ (${engineUsed})_`
                 }, { quoted: mek });
             } else {
                 // Send as Video if <= 100MB
                 await conn.sendMessage(from, {
                     video: { url: data.download_url },
                     mimetype: 'video/mp4',
-                    caption: `👑 *DiskWala Video* 👑
-
-📦 *File:* ${title}
-📊 *Size:* ${sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream"}
-
-_Downloaded via ＤＭＣ™ Playwright Cloud Engine_`
+                    caption: `👑 *DiskWala Video* 👑\n\n📦 *File:* ${title}\n📊 *Size:* ${sizeMB > 0 ? sizeMB.toFixed(2) + " MB" : "Stream"}\n\n_Downloaded via ＤＭＣ™ (${engineUsed})_`
                 }, { quoted: mek });
             }
         } catch (sendErr) {
