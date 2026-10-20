@@ -1,22 +1,58 @@
 /**
- * 👑 DMC GOD MODE V53 (CRASH GUARD & ANTI-SPAM) 👑
- * LOGIC: Native YouTube Downloader with Azure Playwright Engine + Swipe-to-MP3
+ * 👑 DMC GOD MODE V54 (SMART FAILOVER ENGINE) 👑
+ * LOGIC: Primary Azure Cloud Server (Fast Direct Core) ──► Busy/Down? ──► Auto GitHub Actions Backup (16GB RAM)
+ * FEATURES: 100% Native YouTube Audio/Video + Swipe-to-MP3 + 1-Tap Link + yt-search + Crash Guard
  */
 
 const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
 
-// ✅ Primary Dedicated Engine: Azure Cloud Server (Fast Direct Unblocked)
-const PRIMARY_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
+// 1️⃣ Primary Server: User's Azure Cloud VM (High-Speed Direct Core)
+const PRIMARY_AZURE_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
 
-// Helper to fetch video or audio info directly from Azure Server
-async function fetchFromAzure(videoUrl, type = 'video') {
-    const res = await axios.get(PRIMARY_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
-        timeout: 30000
-    });
-    if (res.data && res.data.download_url) return res.data;
-    throw new Error(res.data?.error || "Direct download link not returned from Azure server");
+// 2️⃣ Backup Server: GitHub Actions Runner (16GB RAM Cloud VM via Localtunnel)
+const BACKUP_GITHUB_API = 'https://dmc-backup-api.loca.lt/api/info';
+
+// Smart Failover Engine: Primary Azure (15s) ──► Fail/Busy? ──► Auto GitHub Actions Backup (35s)
+async function fetchMediaWithFailover(videoUrl, type = 'video') {
+    let lastErr = null;
+
+    // 1️⃣ First Attempt: Primary Azure Cloud Server
+    try {
+        const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+            headers: { 'Bypass-Tunnel-Reminder': 'true' },
+            timeout: 15000
+        });
+        if (res.data && res.data.download_url) {
+            return {
+                ...res.data,
+                engineUsed: 'Primary Azure Core'
+            };
+        }
+    } catch (primaryErr) {
+        lastErr = primaryErr;
+        console.warn(`⚠️ [FAILOVER TRIGGERED] Primary Azure API busy/down (${primaryErr.message}). Switching to GitHub Actions Backup...`);
+    }
+
+    // 2️⃣ Failover Attempt: Secondary GitHub Actions Runner Backup
+    try {
+        const backupRes = await axios.get(BACKUP_GITHUB_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+            headers: { 'Bypass-Tunnel-Reminder': 'true' },
+            timeout: 35000
+        });
+        if (backupRes.data && backupRes.data.download_url) {
+            return {
+                ...backupRes.data,
+                engineUsed: 'Backup Cloud Failover'
+            };
+        }
+    } catch (backupErr) {
+        console.error(`❌ [ALL ENGINES FAILED] Azure: ${lastErr?.message} | GitHub: ${backupErr.message}`);
+        throw new Error(backupErr.message || lastErr?.message || "Both download engines failed");
+    }
+
+    throw new Error("Stream not found from both Primary and Backup engines");
 }
 
 // Connection-safe media sender with retry logic for network stability
@@ -60,12 +96,12 @@ function decodeInvisible(str) {
     return decoded;
 }
 
-// 1. COMMAND HANDLER (.song, .video, .play, .yt, .mp3, .mp4, etc.)
+// 1. COMMAND HANDLER (.song, .video, .play, .yt, .audio, .mp3, .mp4, etc.)
 cmd({
     pattern: "download",
     alias: ["song", "play", "video", "yt", "audio", "mp3", "mp4", "yta", "ytaudio"],
     react: "🎬",
-    desc: "Download YouTube audio or video",
+    desc: "Download YouTube audio or video with Smart Failover",
     category: "download",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply, prefix, command, body }) => {
@@ -112,13 +148,14 @@ cmd({
 
         const fetchType = isAudioOnly ? 'audio' : 'video';
 
-        // Fetch stream from Azure
-        const data = await fetchFromAzure(targetUrl, fetchType);
+        // Fetch stream via Smart Failover Engine (Azure ──► GitHub Actions Backup)
+        const data = await fetchMediaWithFailover(targetUrl, fetchType);
         if (!data || !data.download_url) {
             return reply("❌ *Direct Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
         }
 
         const cleanTitle = (data.title && data.title !== "- YouTube" && data.title !== "YouTube") ? data.title : (searchTitle || (isAudioOnly ? "Audio Track" : "Video"));
+        const engineLabel = data.engineUsed || "Primary Azure Core";
 
         if (isAudioOnly) {
             await sendMediaSafely(conn, from, {
@@ -138,15 +175,15 @@ cmd({
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
 
-        // Send Video with stylish Swipe prompt and 1-Tap link
+        // Send Video with stylish Swipe prompt, 1-Tap link, and Engine label
         await sendMediaSafely(conn, from, {
             video: { url: data.download_url },
-            caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt + oneTapPrompt
+            caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
         }, { quoted: mek });
 
     } catch (err) {
         console.error("Downloader Error:", err.message);
-        reply("❌ *YouTube වෙතින් Download කිරීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.*");
+        reply("❌ *YouTube වෙතින් Download කිරීමට නොහැකි විය. (සර්වර් කාර්යබහුලයි, කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න)*");
     }
 });
 
@@ -168,7 +205,7 @@ cmd({
 
                 await reply("⏳ *MP3 Audio එක සකසමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
-                const audioData = await fetchFromAzure(targetUrl, 'audio');
+                const audioData = await fetchMediaWithFailover(targetUrl, 'audio');
                 if (!audioData || !audioData.download_url) {
                     return reply("❌ *Audio Stream එක ලබා ගැනීමට නොහැකි විය.*");
                 }
@@ -197,7 +234,7 @@ cmd({
 
         await reply("⏳ *YouTube ලින්ක් එක හඳුනාගන්නා ලදී. Download වෙමින් පවතී...*");
 
-        const data = await fetchFromAzure(trimmed, 'video');
+        const data = await fetchMediaWithFailover(trimmed, 'video');
         if (!data || !data.download_url) {
             return reply("❌ *Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
         }
@@ -207,10 +244,11 @@ cmd({
         const secretCode = encodeInvisible("DMC_AUDIO:" + trimmed);
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
+        const engineLabel = data.engineUsed || "Primary Azure Core";
 
         await sendMediaSafely(conn, from, {
             video: { url: data.download_url },
-            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt + oneTapPrompt
+            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
         }, { quoted: mek });
 
     } catch (err) {
