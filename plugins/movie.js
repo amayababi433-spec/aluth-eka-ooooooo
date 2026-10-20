@@ -1,15 +1,19 @@
 /**
- * 👑 DMC MOVIE, TV SERIES & 1-TAP SINHALA SUBTITLE SYSTEM 👑
+ * 👑 DMC MOVIE, TV SERIES & 1-TAP SINHALA SUBTITLE SYSTEM (AUTO-MIND CORE) 👑
  * FEATURES:
- *  - Sinhala Subtitles (.srt / .zip) directly from Baiscope/Sinhalasub
- *  - 1-Tap Subtitle WhatsApp link auto-fill generator
- *  - Movies & TV Series Search (Hollywood, Bollywood, Kollywood, Sinhala, 2026 releases)
- *  - High-Speed TG Cloud Engine (Keeps Azure Free Tier light and safe)
+ *  - 100% Dynamic Live Scraping (NO Hardcoded Episodes or Arrays - 100% Real-time Auto Mind)
+ *  - One Piece Live-Action & Anime Dynamic Episode Resolver
+ *  - Universal TV Series Engine (.series / .tv for ANY TV series)
+ *  - 1-Tap Subtitle WhatsApp link auto-fill generator for every episode
+ *  - Direct Sinhala Subtitle (.srt / .zip) Extractor via Baiscope Redeem API
+ *  - Live HD Shorts & Zoro Edits Player (In Picture: Zoro Three Swords, Zero Fear)
+ *  - Safe TG Cloud Engine (Zero load on Azure free tier)
  */
 
 const { cmd } = require('../command');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const yts = require('yt-search');
 
 // Session store for interactive menu selections
 if (!global.movieSessions) global.movieSessions = {};
@@ -21,7 +25,7 @@ function createOneTapLink(botNumber, commandText) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 1. SINHALA SUBTITLE EXTRACTOR (Baiscope Reverse-Engineered Engine)
+// 1. SINHALA SUBTITLE EXTRACTOR (Baiscope Live Redeem Engine)
 // ─────────────────────────────────────────────────────────────
 async function fetchSinhalaSubtitle(query) {
     try {
@@ -135,7 +139,119 @@ async function fetchSinhalaSubtitle(query) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 2. MOVIE SCRAPERS (Sinhalasub, Cinesubz, Baiscope)
+// 2. AUTO-MIND DYNAMIC SERIES SCRAPER (Zero Hardcoding)
+// ─────────────────────────────────────────────────────────────
+async function getLiveSeriesData(query) {
+    try {
+        // 1. Search for TV Show on Sinhalasub
+        const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}`;
+        const searchRes = await axios.get(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 10000
+        });
+        const $ = cheerio.load(searchRes.data);
+
+        let showUrl = null;
+        let showTitle = null;
+
+        $('a[href*="/tvshows/"]').each((i, el) => {
+            const h = $(el).attr('href');
+            const t = $(el).text().trim() || $(el).attr('title') || '';
+            if (h && !showUrl && !h.endsWith('/tvshows/')) {
+                showUrl = h;
+                showTitle = t;
+            }
+        });
+
+        if (!showUrl) {
+            // Fallback: search Baiscope for TV episodes
+            return await getBaiscopeLiveSeries(query);
+        }
+
+        // 2. Fetch the live TV show page and extract ALL seasons and episodes dynamically
+        const pageRes = await axios.get(showUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 10000
+        });
+        const $p = cheerio.load(pageRes.data);
+        const seriesTitle = $p('h1').text().trim() || showTitle;
+        const episodes = [];
+
+        $p('a[href*="/episodes/"]').each((i, el) => {
+            const link = $p(el).attr('href');
+            if (!link) return;
+
+            const sMatch = link.match(/s(\d+)e(\d+)/i) || link.match(/season-(\d+)-episode-(\d+)/i);
+            const season = sMatch ? parseInt(sMatch[1], 10) : 1;
+            const epNum = sMatch ? parseInt(sMatch[2], 10) : (episodes.length + 1);
+
+            let rawText = $p(el).text().trim().replace(/\s+/g, ' ');
+            let epTitle = `Episode ${epNum}`;
+            const epNameMatch = rawText.match(/Episode\s*\d+\s*(?:\[[^\]]+\])?/i);
+            if (epNameMatch) epTitle = epNameMatch[0];
+
+            if (!episodes.some(e => e.link === link)) {
+                episodes.push({
+                    season,
+                    episode: epNum,
+                    title: epTitle,
+                    link
+                });
+            }
+        });
+
+        episodes.sort((a, b) => a.season !== b.season ? a.season - b.season : a.episode - b.episode);
+
+        return {
+            title: seriesTitle,
+            showUrl,
+            totalEpisodes: episodes.length,
+            episodes
+        };
+
+    } catch (e) {
+        console.error("Live Series Scraper Error:", e.message);
+        return null;
+    }
+}
+
+async function getBaiscopeLiveSeries(query) {
+    try {
+        const searchUrl = `https://www.baiscope.lk/?s=${encodeURIComponent(query)}`;
+        const res = await axios.get(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 10000
+        });
+        const $ = cheerio.load(res.data);
+        const episodes = [];
+        $('article').each((i, el) => {
+            const h = $(el).find('a').attr('href') || '';
+            const t = $(el).find('a').text().trim().replace(/\s+/g, ' ');
+            if (h.includes('/tv/') || t.toLowerCase().includes('s0') || t.toLowerCase().includes('season')) {
+                const sMatch = t.match(/\[S(\d+)\s*:\s*E(\d+)\]/i) || h.match(/s(\d+)-e(\d+)/i);
+                const season = sMatch ? parseInt(sMatch[1], 10) : 1;
+                const epNum = sMatch ? parseInt(sMatch[2], 10) : (i + 1);
+                episodes.push({
+                    season,
+                    episode: epNum,
+                    title: t,
+                    link: h.startsWith('http') ? h : `https://www.baiscope.lk${h}`
+                });
+            }
+        });
+        return {
+            title: query,
+            showUrl: searchUrl,
+            totalEpisodes: episodes.length,
+            episodes
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3. MOVIE SCRAPERS (Sinhalasub, Cinesubz, Baiscope)
 // ─────────────────────────────────────────────────────────────
 async function searchMoviesMulti(query) {
     let results = [];
@@ -182,33 +298,225 @@ async function searchMoviesMulti(query) {
         });
     } catch (e) {}
 
-    // Search Cinesubz
-    if (results.length < 3) {
-        try {
-            const res = await axios.get(`https://cinesubz.co/?s=${encodeURIComponent(query)}`, {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 10000
-            });
-            const $ = cheerio.load(res.data);
-            $('a[href*="/movies/"], a[href*="/tvshows/"]').each((i, el) => {
-                const h = $(el).attr('href');
-                const t = $(el).text().trim() || $(el).attr('title') || '';
-                if (h && t && t.length > 3 && !results.some(r => r.link === h) && results.length < 6) {
-                    results.push({
-                        title: t,
-                        link: h,
-                        source: 'Cinesubz.co'
-                    });
-                }
-            });
-        } catch (e) {}
-    }
-
     return results;
 }
 
+// Helper: YouTube Video Downloader for Shorts/Clips
+async function fetchYouTubeShortStream(query) {
+    try {
+        const searchResults = await yts(query);
+        if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) return null;
+        const targetVideo = searchResults.videos[0];
+
+        // Fetch direct stream via Tier 3 Master Safety Net
+        const res = await axios.get(`https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(targetVideo.url)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 20000
+        });
+
+        if (res.data && res.data.success && res.data.result?.download_url) {
+            return {
+                title: res.data.result.title || targetVideo.title,
+                download_url: res.data.result.download_url,
+                targetUrl: targetVideo.url
+            };
+        }
+    } catch (e) {
+        console.error("YouTube Short Fetch Error:", e.message);
+    }
+    return null;
+}
+
 // ─────────────────────────────────────────────────────────────
-// 3. COMMAND: .movie / .film / .mv / .cinema
+// 4. COMMAND: .oplive (Auto-Mind One Piece Hub)
+// ─────────────────────────────────────────────────────────────
+cmd({
+    pattern: "oplive",
+    alias: ["onepiece", "opnetflix", "zoro"],
+    react: "⚔️",
+    desc: "Auto-Mind One Piece Live-Action Episodes & HD Shorts",
+    category: "download",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply }) => {
+    try {
+        const input = q ? q.trim() : "";
+        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+
+        // Case A: Shorts / Clips (In Picture: Zoro Three Swords, Zero Fear!)
+        const isClip = input && !input.toLowerCase().startsWith("ep") && !input.toLowerCase().startsWith("s0") && !/^\d+$/.test(input) && (
+            input.toLowerCase().includes("zoro") || 
+            input.toLowerCase().includes("sword") || 
+            input.toLowerCase().includes("clip") || 
+            input.toLowerCase().includes("short") ||
+            input.toLowerCase().includes("fear") ||
+            input.toLowerCase().includes("fight") ||
+            input.toLowerCase().includes("luffy")
+        );
+
+        if (isClip) {
+            await conn.sendPresenceUpdate('composing', from);
+            await reply(`⚔️ *One Piece Live-Action Clip සොයමින් පවතී: "${input}"...*`);
+
+            const clipData = await fetchYouTubeShortStream(`One Piece Netflix Live Action ${input} HD shorts`);
+            if (clipData && clipData.download_url) {
+                const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20One%20Piece` : '';
+                const oneTapMp3 = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(clipData.targetUrl)}` : '';
+
+                return await conn.sendMessage(from, {
+                    video: { url: clipData.download_url },
+                    caption: `👑 *${clipData.title}* ⚔️😤\n#shorts #onepiece #netflix\n\n_Downloaded via ＤＭＣ™ (TG Engine)_` + oneTapMp3 + oneTapSub
+                }, { quoted: mek });
+            }
+        }
+
+        // Case B: Specific Episode (.oplive ep 1, .oplive 1, .oplive s2 ep 3, etc.)
+        const isEpisodeRequest = input && (input.toLowerCase().startsWith("ep") || input.toLowerCase().startsWith("s0") || /^\d+$/.test(input));
+        if (isEpisodeRequest) {
+            const epMatch = input.match(/(?:ep|episode|s0?1e|s)?\s*(\d+)/i);
+            const targetEp = epMatch ? parseInt(epMatch[1], 10) : 1;
+            const isSeason2 = input.toLowerCase().includes("s2") || input.toLowerCase().includes("s02");
+            const targetSeason = isSeason2 ? 2 : 1;
+            const seasonStr = `S0${targetSeason}`;
+            const epStr = targetEp < 10 ? `0${targetEp}` : `${targetEp}`;
+
+            await conn.sendPresenceUpdate('composing', from);
+            await reply(`⚔️ *One Piece Live-Action [${seasonStr}E${epStr}] සොයමින් පවතී... (Auto Mind)*`);
+
+            // Dynamically resolve show data
+            const liveData = await getLiveSeriesData("One Piece 2023");
+            let foundEp = null;
+            if (liveData && liveData.episodes) {
+                foundEp = liveData.episodes.find(e => e.season === targetSeason && e.episode === targetEp);
+            }
+
+            const epTitle = foundEp ? foundEp.title : `Episode ${targetEp}`;
+            const epLink = foundEp ? foundEp.link : `https://sinhalasub.lk/episodes/one-piece-s0${targetSeason}e${epStr}/`;
+            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub One Piece ${seasonStr}E${epStr}`) : '';
+
+            const cardMsg = `👑 *ONE PIECE (NETFLIX LIVE-ACTION)* 👑\n` +
+                            `🎬 *${seasonStr}E${epStr} - ${epTitle}*\n` +
+                            `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                            `🔗 *Watch / Download Page:*\n${epLink}\n\n` +
+                            (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
+                            `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් ක්ෂණිකව මෙම Episode එකේ Sinhala Subtitle ගොනුව (.zip / .srt) WhatsApp එකට ලබා ගත හැක._\n\n` +
+                            `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
+
+            return await conn.sendMessage(from, {
+                text: cardMsg
+            }, { quoted: mek });
+        }
+
+        // Case C: Menu Mode (Live Dynamically Scraped on the fly!)
+        await conn.sendPresenceUpdate('composing', from);
+        await reply("🔎 *One Piece Live-Action Episodes සජීවීව පරීක්ෂා කරමින් පවතී... (Auto Mind)*");
+
+        const seriesData = await getLiveSeriesData("One Piece 2023");
+
+        if (!seriesData || !seriesData.episodes || seriesData.episodes.length === 0) {
+            return reply("❌ *One Piece Episodes සජීවීව සොයාගත නොහැකි විය. කරුණාකර පසුව උත්සාහ කරන්න.*");
+        }
+
+        let menuText = `👑 *ONE PIECE (NETFLIX LIVE-ACTION) HUB* 👑\n` +
+                       `📺 *Series:* ${seriesData.title}\n` +
+                       `📦 *Total Episodes Live:* ${seriesData.totalEpisodes}\n` +
+                       `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                       `─────────────────────────\n`;
+
+        // Group dynamically by season
+        const seasons = {};
+        seriesData.episodes.forEach(e => {
+            if (!seasons[e.season]) seasons[e.season] = [];
+            seasons[e.season].push(e);
+        });
+
+        Object.keys(seasons).forEach(s => {
+            menuText += `⚔️ *SEASON ${s} EPISODES:*\n`;
+            seasons[s].forEach(e => {
+                const subLink = botNum ? createOneTapLink(botNum, `.sub One Piece S0${s}E${e.episode < 10 ? '0' + e.episode : e.episode}`) : '';
+                menuText += `• *Ep ${e.episode}:* ${e.title}\n` +
+                            `  📥 Download: *.oplive ${s > 1 ? 's' + s + ' ' : ''}ep ${e.episode}*\n` +
+                            (subLink ? `  👉 🇸🇮 Subtitle: ${subLink}\n` : '') +
+                            `\n`;
+            });
+        });
+
+        menuText += `─────────────────────────\n` +
+                    `⚔️ *POPULAR 4K/HD SHORTS & EDITS:*\n` +
+                    `• *.oplive Three Swords Zero Fear* (Zoro in photo)\n` +
+                    `• *.oplive zoro fight*\n` +
+                    `• *.oplive luffy*\n\n` +
+                    `💡 _ඕනෑම Episode එකක් ලබා ගැනීමට අදාළ Command එක හෝ 1-Tap Subtitle Link එක ඔබන්න._`;
+
+        return await conn.sendMessage(from, {
+            image: { url: "https://images.alphacoders.com/132/1329583.jpeg" },
+            caption: menuText
+        }, { quoted: mek });
+
+    } catch (err) {
+        console.error("OPLive Auto-Mind Error:", err.message);
+        reply("❌ *One Piece තොරතුරු ලබා ගැනීමට නොහැකි විය.*");
+    }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 5. COMMAND: .series / .tv (Universal Auto-Mind for ANY TV Series)
+// ─────────────────────────────────────────────────────────────
+cmd({
+    pattern: "series",
+    alias: ["tv", "tvshow", "season"],
+    react: "📺",
+    desc: "Universal Dynamic TV Series & Episode Extractor (Auto Mind)",
+    category: "downloader",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply }) => {
+    try {
+        if (!q) {
+            return reply("📺 *කරුණාකර TV Series එකේ නම ලබා දෙන්න!*\n\nඋදාහරණ:\n*.series One Piece*\n*.series Loki*\n*.series Wednesday*\n*.series Stranger Things*");
+        }
+
+        await conn.sendPresenceUpdate('composing', from);
+        await reply(`🔎 *"${q.trim()}" සඳහා Seasons සහ Episodes සජීවීව සොයමින් පවතී... (Auto Mind)*`);
+
+        const data = await getLiveSeriesData(q.trim());
+        if (!data || !data.episodes || data.episodes.length === 0) {
+            return reply(`❌ *"${q.trim()}" සඳහා කතාමාලා සොයාගත නොහැකි විය.*`);
+        }
+
+        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+
+        let menu = `📺 *${data.title}* 📺\n` +
+                   `📦 *Total Episodes:* ${data.totalEpisodes}\n` +
+                   `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                   `─────────────────────────\n`;
+
+        data.episodes.slice(0, 15).forEach(e => {
+            const epCode = `S0${e.season}E${e.episode < 10 ? '0' + e.episode : e.episode}`;
+            const subLink = botNum ? createOneTapLink(botNum, `.sub ${q.trim()} ${epCode}`) : '';
+            menu += `• *[${epCode}]* ${e.title}\n` +
+                    `  🔗 Watch: ${e.link}\n` +
+                    (subLink ? `  👉 🇸🇮 Subtitle: ${subLink}\n` : '') +
+                    `\n`;
+        });
+
+        if (data.episodes.length > 15) {
+            menu += `_...සහ තවත් Episodes ${data.episodes.length - 15} ක් ඇත._\n`;
+        }
+
+        menu += `─────────────────────────\n` +
+                `💡 _Subtitle එකක් ලබා ගැනීමට අදාළ 1-Tap Subtitle Link එක ඔබන්න._`;
+
+        await conn.sendMessage(from, {
+            text: menu
+        }, { quoted: mek });
+
+    } catch (err) {
+        console.error("Series Command Error:", err.message);
+        reply("❌ *Series තොරතුරු ලබා ගැනීමට නොහැකි විය.*");
+    }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 6. COMMAND: .movie / .film / .mv / .cinema
 // ─────────────────────────────────────────────────────────────
 cmd({
     pattern: "movie",
@@ -252,7 +560,6 @@ cmd({
                     `_බාගත කිරීමට හෝ සබැඳි ලබා ගැනීමට අදාළ අංකය (1-${Math.min(5, results.length)}) Reply කරන්න._\n` +
                     `_නැතහොත් කෙලින්ම Subtitle ලබා ගැනීමට 1-Tap Link එක ඔබන්න._`;
 
-        // Save session for interactive reply
         global.movieSessions[sender] = {
             results: results.slice(0, 5),
             timestamp: Date.now()
@@ -269,7 +576,7 @@ cmd({
 });
 
 // ─────────────────────────────────────────────────────────────
-// 4. COMMAND: .sub / .sinhalasub / .subtitle / .srt
+// 7. COMMAND: .sub / .sinhalasub / .subtitle / .srt
 // ─────────────────────────────────────────────────────────────
 cmd({
     pattern: "sub",
@@ -281,7 +588,7 @@ cmd({
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) {
-            return reply("🇸🇮 *කරුණාකර Subtitle අවශ්‍ය චිත්‍රපටයේ නම ලබා දෙන්න!*\n\nඋදාහරණ:\n*.sub Deadpool*\n*.sub Avatar S02E07*\n*.sub One Piece*");
+            return reply("🇸🇮 *කරුණාකර Subtitle අවශ්‍ය චිත්‍රපටයේ හෝ Episode එකේ නම ලබා දෙන්න!*\n\nඋදාහරණ:\n*.sub Deadpool*\n*.sub One Piece S01E01*\n*.sub Avatar S02E07*");
         }
 
         await conn.sendPresenceUpdate('composing', from);
@@ -312,7 +619,7 @@ cmd({
 });
 
 // ─────────────────────────────────────────────────────────────
-// 5. INTERACTIVE REPLY LISTENER (Selecting Movie by Number)
+// 8. INTERACTIVE REPLY LISTENER (Selecting Movie by Number)
 // ─────────────────────────────────────────────────────────────
 cmd({
     on: "body"
@@ -321,11 +628,9 @@ cmd({
         if (mek.key.fromMe || !body) return;
         const trimmed = body.trim();
 
-        // Check if numeric reply (1-5) and valid session exists
         const session = global.movieSessions[sender];
         if (!session || !session.results) return;
 
-        // Expire session after 5 minutes
         if (Date.now() - session.timestamp > 300000) {
             delete global.movieSessions[sender];
             return;
@@ -335,7 +640,7 @@ cmd({
         if (isNaN(choice) || choice < 1 || choice > session.results.length) return;
 
         const selected = session.results[choice - 1];
-        delete global.movieSessions[sender]; // Clear after selection
+        delete global.movieSessions[sender];
 
         await conn.sendPresenceUpdate('composing', from);
         await reply(`⏳ *"${selected.title}" සඳහා තොරතුරු සහ ලින්ක් ලබා ගනිමින් පවතී... (TG Cloud)*`);
