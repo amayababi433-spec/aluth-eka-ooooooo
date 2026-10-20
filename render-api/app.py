@@ -1,15 +1,16 @@
-import os, re, json, asyncio, subprocess, urllib.parse
+import os, re, json, asyncio, urllib.parse
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
+import yt_dlp
 from playwright.async_api import async_playwright
 
 PORT = int(os.environ.get("PORT", 8080))
 YT_COOKIES_PATH = os.path.join(os.path.dirname(__file__), "cookies.txt")
 
-BLOCKED_TYPES = ["image", "font", "stylesheet", "other"]
+BLOCKED_TYPES = ["image", "font", "stylesheet"]
 BLOCKED_DOMAINS = [
     "doubleclick.net", "googlesyndication.com", "google-analytics.com",
     "googletagmanager.com", "facebook.net", "adservice.google.com"
@@ -31,21 +32,11 @@ async def keep_alive_task():
                 await client.get(f"{target_url}/health")
         except Exception:
             pass
-        await asyncio.sleep(540)  # Ping every 9 minutes (Render sleeps after 15 min)
+        await asyncio.sleep(540)  # Ping every 9 minutes
 
 @asynccontextmanager
 async def lifespan(application):
-    print("👑 DMC Downloader API 2.0 (Playwright + yt-dlp Turbo) starting...")
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "python", "-m", "playwright", "install", "chromium",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        await proc.communicate()
-        print("Playwright Chromium ready!" if proc.returncode == 0 else "Playwright check finished")
-    except Exception as e:
-        print("Playwright startup:", e)
-    
+    print("👑 DMC Downloader API 2.0 (Playwright + Native yt-dlp) starting...")
     # Start Keep-Alive Background Worker
     asyncio.create_task(keep_alive_task())
     yield
@@ -53,15 +44,6 @@ async def lifespan(application):
 
 app = FastAPI(title="DMC Downloader API", version="2.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-def get_yt_dlp():
-    for p in ["yt-dlp", "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]:
-        try:
-            if subprocess.run([p, "--version"], capture_output=True, timeout=5).returncode == 0:
-                return p
-        except Exception:
-            pass
-    return "yt-dlp"
 
 async def get_browser():
     pw = await async_playwright().start()
@@ -77,53 +59,51 @@ async def block_resources(page):
     await page.route("**/*", handler)
 
 # ════════════════════════════════════════════════════════════════
-# 1. YOUTUBE ENGINES (Playwright Human Emulation + yt-dlp Turbo)
+# 1. YOUTUBE ENGINES (Native In-Memory yt-dlp + Embed Playwright)
 # ════════════════════════════════════════════════════════════════
 
-async def run_ytdlp(url, media_type="video"):
-    """Engine A: yt-dlp with Web Embedded Player + Cookies challenge bypass"""
+def run_ytdlp_sync(url: str, media_type: str = "video"):
+    """Engine A: Native In-Memory yt-dlp (Ultra Fast 1-2s Response)"""
     fmt = (
         "bestaudio[ext=m4a]/bestaudio/best"
         if media_type == "audio"
         else "18/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     )
-    cmd = [
-        get_yt_dlp(), "--no-playlist", "--no-warnings", "--dump-json",
-        "-f", fmt, "--no-check-certificate", "--geo-bypass",
-        "--extractor-args", "youtube:player_client=web_embedded,ios,android"
-    ]
-    if os.path.exists(YT_COOKIES_PATH):
-        cmd += ["--cookies", YT_COOKIES_PATH]
-    cmd.append(url)
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=45)
-    if proc.returncode != 0:
-        raise Exception("yt-dlp error: " + stderr.decode(errors="ignore")[:300])
-
-    info = json.loads(stdout.decode(errors="ignore").strip().split('\n')[0])
-    dl_url = info.get("url")
-    if not dl_url and info.get("formats"):
-        best = next((f for f in info['formats'] if f.get('acodec') != 'none' and f.get('vcodec') != 'none'), None)
-        if best:
-            dl_url = best.get('url')
-        if not dl_url:
-            dl_url = info['formats'][-1].get('url')
-
-    if not dl_url:
-        raise Exception("No direct stream URL in yt-dlp output")
-
-    return {
-        "title": info.get("title", "YouTube Media"),
-        "download_url": dl_url,
-        "duration": info.get("duration", 0),
-        "thumbnail": info.get("thumbnail")
+    ydl_opts = {
+        'format': fmt,
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'nocheckcertificate': True,
+        'geo_bypass': True,
+        'noplaylist': True,
     }
+    if os.path.exists(YT_COOKIES_PATH):
+        ydl_opts['cookiefile'] = YT_COOKIES_PATH
 
-async def scrape_youtube_playwright(url, media_type="video"):
-    """Engine B: Playwright Headless Browser Human Simulation (100% Bot Protection Bypass)"""
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        dl_url = info.get("url")
+        if not dl_url and info.get("formats"):
+            # Find progressive format or best format
+            best = next((f for f in info['formats'] if f.get('acodec') != 'none' and f.get('vcodec') != 'none'), None)
+            if best:
+                dl_url = best.get('url')
+            if not dl_url:
+                dl_url = info['formats'][-1].get('url')
+
+        if not dl_url:
+            raise Exception("No direct stream URL returned by yt-dlp")
+
+        return {
+            "title": info.get("title", "YouTube Media"),
+            "download_url": dl_url,
+            "duration": info.get("duration", 0),
+            "thumbnail": info.get("thumbnail")
+        }
+
+async def scrape_youtube_playwright(url: str, media_type: str = "video"):
+    """Engine B: Playwright Embed Stream Interceptor (100% Captcha/Consent Bypass)"""
     pw, br = await get_browser()
     ctx = pg = None
     captured_urls = []
@@ -142,24 +122,24 @@ async def scrape_youtube_playwright(url, media_type="video"):
 
         pg.on("request", on_req)
 
-        # Navigate to YouTube URL
-        await pg.goto(url, wait_until="domcontentloaded", timeout=30000)
+        # Use YouTube Embed mode to bypass cookie consent dialogs completely
+        vid_match = re.search(r"(?:v=|/shorts/|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
+        if vid_match:
+            nav_url = f"https://www.youtube.com/embed/{vid_match.group(1)}?autoplay=1"
+        else:
+            nav_url = url
 
-        # Wait for video element
-        try:
-            await pg.wait_for_selector("video", timeout=12000)
-        except Exception:
-            pass
+        await pg.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
 
-        # Try to click play if autoplay was paused
+        # Click play button if needed
         try:
-            btn = await pg.query_selector("button.ytp-play-button, button[aria-label*='Play' i]")
+            btn = await pg.query_selector("button.ytp-large-play-button, button.ytp-play-button, video")
             if btn:
                 await btn.click()
         except Exception:
             pass
 
-        # Allow time to capture stream URL
+        # Wait up to 6 seconds for videoplayback network request
         for _ in range(6):
             if captured_urls:
                 break
@@ -207,7 +187,7 @@ async def scrape_youtube_playwright(url, media_type="video"):
 async def health():
     return {
         "status": "online",
-        "engine": "DMC Downloader API v2.0 (Playwright + yt-dlp)",
+        "engine": "DMC Downloader API v2.0 (Playwright + yt-dlp Native)",
         "platform": "Render.com Always-On Container",
         "cookies_loaded": os.path.exists(YT_COOKIES_PATH)
     }
@@ -216,30 +196,34 @@ async def health():
 async def youtube_info(request: Request, url: str = Query(...), type: str = Query("video")):
     media_type = "audio" if type.lower() in ["audio", "mp3", "yta", "ytaudio"] else "video"
     
-    # Calculate base URL for proxying stream
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
     base_url = f"{proto}://{host}"
 
     data = None
-    # Step 1: Run Turbo yt-dlp first
-    try:
-        data = await run_ytdlp(url, media_type)
-    except Exception as e:
-        print(f"yt-dlp error: {e}. Switching to Playwright Human Emulation...")
+    ytdlp_error = None
 
-    # Step 2: Fallback to Playwright Headless Browser
+    # Step 1: Run Native In-Memory yt-dlp first (fastest)
+    try:
+        data = await asyncio.to_thread(run_ytdlp_sync, url, media_type)
+    except Exception as e:
+        ytdlp_error = str(e)
+        print(f"yt-dlp error: {e}. Switching to Playwright Embed Interceptor...")
+
+    # Step 2: Fallback to Playwright Embed Stream Interceptor
     if not data or not data.get("download_url"):
         try:
             data = await scrape_youtube_playwright(url, media_type)
         except Exception as pw_err:
-            return JSONResponse({"error": f"Failed to extract video: {pw_err}"}, status_code=500)
+            return JSONResponse({
+                "error": f"Extraction failed: {pw_err} (yt-dlp: {ytdlp_error})"
+            }, status_code=500)
 
     raw_stream = data.get("download_url")
     if not raw_stream:
         return JSONResponse({"error": "No stream URL found"}, status_code=500)
 
-    # Wrap in high-speed /stream proxy so it bypasses Google Video IP-lock!
+    # Wrap in high-speed /stream proxy so it bypasses Google Video IP-lock
     encoded_stream = urllib.parse.quote(raw_stream, safe="")
     proxy_download_url = f"{base_url}/stream?url={encoded_stream}&type={media_type}"
 
