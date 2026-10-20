@@ -140,12 +140,27 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
         console.log(`🎯 [TeraBox Engine Routing] Mode: ${mode.toUpperCase()} (Full Routing: ${JSON.stringify(routing)})`);
 
         if (mode === 'azure') {
-            engineUsed = "Azure Core (Manual Mode)";
-            res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), { timeout: 35000 });
+            try {
+                engineUsed = "Azure Core";
+                res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), { timeout: 35000 });
+                if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
+            } catch (azErr) {
+                console.warn("⚠️ Azure TeraBox failed, auto-failover to GitHub Runner...", azErr.message);
+                engineUsed = "GitHub Actions (Failover Guard)";
+                const backupBase = await getBackupBaseUrl();
+                res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), { timeout: 45000 });
+            }
         } else if (mode === 'github') {
-            engineUsed = "GitHub Actions (Manual Mode)";
-            const backupBase = await getBackupBaseUrl();
-            res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), { timeout: 45000 });
+            try {
+                engineUsed = "GitHub Actions Runner";
+                const backupBase = await getBackupBaseUrl();
+                res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), { timeout: 40000 });
+                if (!res.data || !res.data.download_url) throw new Error("No download_url from GitHub");
+            } catch (ghErr) {
+                console.warn("⚠️ GitHub TeraBox failed, auto-failover to Azure Core...", ghErr.message);
+                engineUsed = "Azure Core (Failover Guard)";
+                res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), { timeout: 30000 });
+            }
         } else {
             // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to GitHub Actions
             try {

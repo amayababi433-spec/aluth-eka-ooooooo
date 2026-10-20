@@ -38,35 +38,70 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
     const mode = (routing.all && routing.all !== 'auto') ? routing.all : (routing.yt || 'auto');
     console.log(`🎯 [YouTube Engine Routing] Mode: ${mode.toUpperCase()} (Full Routing: ${JSON.stringify(routing)})`);
 
-    // 1️⃣ Manual Mode: Force Azure Cloud Server Only
+    // 1️⃣ Preferred Mode: Azure Cloud Server (with Auto GitHub Failover Guard)
     if (mode === 'azure') {
-        const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
-            headers: { 'Bypass-Tunnel-Reminder': 'true' },
-            timeout: 30000
-        });
-        if (res.data && res.data.download_url) {
-            return {
-                ...res.data,
-                engineUsed: 'Azure Core (Manual Mode)'
-            };
+        try {
+            const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+                headers: { 'Bypass-Tunnel-Reminder': 'true' },
+                timeout: 30000
+            });
+            if (res.data && res.data.download_url) {
+                return {
+                    ...res.data,
+                    engineUsed: 'Azure Core'
+                };
+            }
+            throw new Error(res.data?.error || "Azure server returned no download_url");
+        } catch (azErr) {
+            console.warn(`⚠️ [Azure Server Issue]: ${azErr.message}. Auto-failover to GitHub Runner...`);
+            const backupApiUrl = await getBackupApiUrl();
+            const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+                headers: { 'Bypass-Tunnel-Reminder': 'true' },
+                timeout: 40000
+            });
+            if (backupRes.data && backupRes.data.download_url) {
+                return {
+                    ...backupRes.data,
+                    engineUsed: 'GitHub Actions (Failover Guard)'
+                };
+            }
+            throw azErr;
         }
-        throw new Error(res.data?.error || "Azure server returned no download_url");
     }
 
-    // 2️⃣ Manual Mode: Force GitHub Actions Backup Only
+    // 2️⃣ Preferred Mode: GitHub Actions Runner (with Auto Azure Failover Guard)
     if (mode === 'github') {
-        const backupApiUrl = await getBackupApiUrl();
-        const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
-            headers: { 'Bypass-Tunnel-Reminder': 'true' },
-            timeout: 40000
-        });
-        if (backupRes.data && backupRes.data.download_url) {
-            return {
-                ...backupRes.data,
-                engineUsed: 'GitHub Actions (Manual Mode)'
-            };
+        try {
+            const backupApiUrl = await getBackupApiUrl();
+            const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+                headers: { 'Bypass-Tunnel-Reminder': 'true' },
+                timeout: 35000
+            });
+            if (backupRes.data && backupRes.data.download_url) {
+                return {
+                    ...backupRes.data,
+                    engineUsed: 'GitHub Actions Runner'
+                };
+            }
+            throw new Error(backupRes.data?.error || "GitHub Actions backup returned no download_url");
+        } catch (ghErr) {
+            console.warn(`⚠️ [GitHub Runner Issue]: ${ghErr.message}. Auto-switching to Azure Cloud Server to ensure 100% download success!`);
+            try {
+                const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+                    headers: { 'Bypass-Tunnel-Reminder': 'true' },
+                    timeout: 25000
+                });
+                if (res.data && res.data.download_url) {
+                    return {
+                        ...res.data,
+                        engineUsed: 'Azure Core (Failover Guard)'
+                    };
+                }
+            } catch (azErr) {
+                console.error('Azure failover also failed:', azErr.message);
+            }
+            throw ghErr;
         }
-        throw new Error(backupRes.data?.error || "GitHub Actions backup returned no download_url");
     }
 
     // 3️⃣ Smart Auto Failover Mode (Azure Primary 15s ──► Fail? ──► GitHub Actions Backup 35s)
