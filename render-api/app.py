@@ -1,4 +1,4 @@
-import os, re, json, asyncio, urllib.parse
+import os, re, json, asyncio, urllib.parse, signal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -36,13 +36,13 @@ async def keep_alive_task():
 
 @asynccontextmanager
 async def lifespan(application):
-    print("👑 DMC Downloader API 2.0 (Playwright + Native yt-dlp) starting...")
+    print("👑 DMC Downloader API 2.1 (yt-dlp Fast + Playwright TeraBox/DiskWala) starting...")
     # Start Keep-Alive Background Worker
     asyncio.create_task(keep_alive_task())
     yield
     print("DMC Downloader API shutting down.")
 
-app = FastAPI(title="DMC Downloader API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="DMC Downloader API", version="2.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 async def get_browser():
@@ -59,11 +59,11 @@ async def block_resources(page):
     await page.route("**/*", handler)
 
 # ════════════════════════════════════════════════════════════════
-# 1. YOUTUBE ENGINES (Native In-Memory yt-dlp + Embed Playwright)
+# 1. YOUTUBE ENGINE (Native yt-dlp ONLY — no Playwright for YT)
 # ════════════════════════════════════════════════════════════════
 
 def run_ytdlp_sync(url: str, media_type: str = "video"):
-    """Engine A: Native In-Memory yt-dlp (Ultra Fast 1-2s Response)"""
+    """Native In-Memory yt-dlp with strict timeout for Render Free Tier (0.1 CPU)."""
     fmt = (
         "bestaudio[ext=m4a]/bestaudio/best"
         if media_type == "audio"
@@ -77,6 +77,8 @@ def run_ytdlp_sync(url: str, media_type: str = "video"):
         'nocheckcertificate': True,
         'geo_bypass': True,
         'noplaylist': True,
+        'socket_timeout': 10,
+        'extractor_retries': 0,
     }
     if os.path.exists(YT_COOKIES_PATH):
         ydl_opts['cookiefile'] = YT_COOKIES_PATH
@@ -102,83 +104,6 @@ def run_ytdlp_sync(url: str, media_type: str = "video"):
             "thumbnail": info.get("thumbnail")
         }
 
-async def scrape_youtube_playwright(url: str, media_type: str = "video"):
-    """Engine B: Playwright Embed Stream Interceptor (100% Captcha/Consent Bypass)"""
-    pw, br = await get_browser()
-    ctx = pg = None
-    captured_urls = []
-    try:
-        ctx = await br.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
-        )
-        pg = await ctx.new_page()
-
-        async def on_req(request):
-            req_url = request.url
-            if "googlevideo.com/videoplayback" in req_url:
-                if ("mime=video" in req_url or "mime=audio" in req_url) and req_url not in captured_urls:
-                    captured_urls.append(req_url)
-
-        pg.on("request", on_req)
-
-        # Use YouTube Embed mode to bypass cookie consent dialogs completely
-        vid_match = re.search(r"(?:v=|/shorts/|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
-        if vid_match:
-            nav_url = f"https://www.youtube.com/embed/{vid_match.group(1)}?autoplay=1"
-        else:
-            nav_url = url
-
-        await pg.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
-
-        # Click play button if needed
-        try:
-            btn = await pg.query_selector("button.ytp-large-play-button, button.ytp-play-button, video")
-            if btn:
-                await btn.click()
-        except Exception:
-            pass
-
-        # Wait up to 6 seconds for videoplayback network request
-        for _ in range(6):
-            if captured_urls:
-                break
-            await asyncio.sleep(1)
-
-        title = "YouTube Media"
-        try:
-            t = await pg.title()
-            title = re.sub(r"\s*-\s*YouTube$", "", t, flags=re.IGNORECASE).strip() or "YouTube Media"
-        except Exception:
-            pass
-
-        if not captured_urls:
-            raise Exception("Playwright could not capture videoplayback stream")
-
-        chosen = captured_urls[0]
-        for u in captured_urls:
-            if media_type == "audio" and "mime=audio" in u:
-                chosen = u
-                break
-            elif media_type == "video" and "mime=video" in u:
-                chosen = u
-                break
-
-        return {
-            "title": title,
-            "download_url": chosen,
-            "duration": 0,
-            "thumbnail": None
-        }
-    finally:
-        try:
-            if pg: await pg.close()
-            if ctx: await ctx.close()
-            await br.close()
-            await pw.stop()
-        except Exception:
-            pass
-
 # ════════════════════════════════════════════════════════════════
 # 2. ROUTES
 # ════════════════════════════════════════════════════════════════
@@ -187,8 +112,8 @@ async def scrape_youtube_playwright(url: str, media_type: str = "video"):
 async def health():
     return {
         "status": "online",
-        "engine": "DMC Downloader API v2.0 (Playwright + yt-dlp Native)",
-        "platform": "Render.com Always-On Container",
+        "engine": "DMC Downloader API v2.1 (yt-dlp Fast + Playwright TeraBox/DiskWala)",
+        "platform": "Render.com",
         "cookies_loaded": os.path.exists(YT_COOKIES_PATH)
     }
 
@@ -200,24 +125,21 @@ async def youtube_info(request: Request, url: str = Query(...), type: str = Quer
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
     base_url = f"{proto}://{host}"
 
-    data = None
-    ytdlp_error = None
-
-    # Step 1: Run Native In-Memory yt-dlp first (fastest)
+    # Run yt-dlp with a strict 20-second asyncio timeout
+    # On Render Free (0.1 CPU), yt-dlp can be slow but usually finishes in 10-18s
     try:
-        data = await asyncio.to_thread(run_ytdlp_sync, url, media_type)
+        data = await asyncio.wait_for(
+            asyncio.to_thread(run_ytdlp_sync, url, media_type),
+            timeout=25.0
+        )
+    except asyncio.TimeoutError:
+        return JSONResponse({
+            "error": "yt-dlp timed out on Render Free tier. Use Azure Primary instead."
+        }, status_code=504)
     except Exception as e:
-        ytdlp_error = str(e)
-        print(f"yt-dlp error: {e}. Switching to Playwright Embed Interceptor...")
-
-    # Step 2: Fallback to Playwright Embed Stream Interceptor
-    if not data or not data.get("download_url"):
-        try:
-            data = await scrape_youtube_playwright(url, media_type)
-        except Exception as pw_err:
-            return JSONResponse({
-                "error": f"Extraction failed: {pw_err} (yt-dlp: {ytdlp_error})"
-            }, status_code=500)
+        return JSONResponse({
+            "error": f"yt-dlp extraction failed: {str(e)[:300]}"
+        }, status_code=500)
 
     raw_stream = data.get("download_url")
     if not raw_stream:
@@ -315,7 +237,7 @@ async def stream_proxy(url: str = Query(...), type: str = Query("video")):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ════════════════════════════════════════════════════════════════
-# 3. TERABOX ENGINE
+# 3. TERABOX ENGINE (Playwright required — no yt-dlp support)
 # ════════════════════════════════════════════════════════════════
 
 async def scrape_terabox(url):
@@ -414,7 +336,7 @@ async def terabox_stream(url: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ════════════════════════════════════════════════════════════════
-# 4. DISKWALA ENGINE
+# 4. DISKWALA ENGINE (Playwright required — no yt-dlp support)
 # ════════════════════════════════════════════════════════════════
 
 async def scrape_diskwala(url):
