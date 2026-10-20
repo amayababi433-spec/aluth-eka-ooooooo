@@ -5,6 +5,7 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const config = require('./config');
 const { setupDashboard } = require('./lib/dashboard');
 
@@ -151,6 +152,54 @@ async function connectToWA() {
         collection = mongoClient.db('whatsapp_bot').collection('auth_info');
     }
 
+    // 🛡️ Distributed Single-Leader Guard to prevent duplicate WhatsApp instances across Koyeb & Render
+    const db = mongoClient.db('whatsapp_bot');
+    const lockCollection = db.collection('bot_settings');
+    const myInstanceId = global.MY_INSTANCE_ID || (global.MY_INSTANCE_ID = (process.env.KOYEB_INSTANCE_ID || process.env.RENDER_INSTANCE_ID || os.hostname() + '_' + Math.random().toString(36).slice(2, 8)));
+    const now = Date.now();
+    const LOCK_TIMEOUT = 18000; // 18 seconds
+
+    try {
+        const currentLock = await lockCollection.findOne({ _id: 'whatsapp_leader_lock' });
+        if (currentLock && currentLock.leaderId !== myInstanceId) {
+            const timeSinceLastHeartbeat = now - (currentLock.lastSeen || 0);
+            if (timeSinceLastHeartbeat < LOCK_TIMEOUT) {
+                console.log(`🛡️ [Session Guard] වෙනත් Instance එකක් (${currentLock.host || currentLock.leaderId}) දැනට WhatsApp සමඟ සම්බන්ධ වී ඇත.`);
+                console.log(`⏳ Session Conflict වැළැක්වීම සඳහා මෙම Instance එක Standby mode හි තබන ලදී. තත්පර 12කින් නැවත Check කෙරේ...`);
+                if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                reconnectTimeout = setTimeout(connectToWA, 12000);
+                return;
+            }
+        }
+
+        // Claim or renew lock
+        await lockCollection.updateOne(
+            { _id: 'whatsapp_leader_lock' },
+            {
+                $set: {
+                    leaderId: myInstanceId,
+                    lastSeen: now,
+                    host: process.env.KOYEB_APP_NAME ? `Koyeb (${process.env.KOYEB_APP_NAME})` : (process.env.RENDER_SERVICE_NAME ? `Render (${process.env.RENDER_SERVICE_NAME})` : os.hostname()),
+                    updatedAt: new Date()
+                }
+            },
+            { upsert: true }
+        );
+
+        if (global.leaderHeartbeatTimer) clearInterval(global.leaderHeartbeatTimer);
+        global.leaderHeartbeatTimer = setInterval(async () => {
+            try {
+                await lockCollection.updateOne(
+                    { _id: 'whatsapp_leader_lock', leaderId: myInstanceId },
+                    { $set: { lastSeen: Date.now() } }
+                );
+            } catch(e) {}
+        }, 5000);
+
+    } catch (lockErr) {
+        console.log('[Leader Lock Warning]:', lockErr.message);
+    }
+
     const { state, saveCreds } = await useMongoDBAuthState(collection);
     const { version, isLatest } = await fetchLatestBaileysVersion();
 
@@ -177,7 +226,7 @@ async function connectToWA() {
     global.sock = sock;
     global.reconnectWA = connectToWA;
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
@@ -193,6 +242,12 @@ async function connectToWA() {
             if (isLoggedOut) {
                 console.log('❌ Session Logged out. Rescan QR.');
             } else if (isReplaced) {
+                if (global.leaderHeartbeatTimer) {
+                    clearInterval(global.leaderHeartbeatTimer);
+                    global.leaderHeartbeatTimer = null;
+                }
+                lockCollection.deleteOne({ _id: 'whatsapp_leader_lock', leaderId: myInstanceId }).catch(() => {});
+
                 replaceCount++;
                 const delayMs = Math.min(30000, 8000 * replaceCount);
                 console.log(`⚠️ Connection Replaced (Reason: 440). වෙනත් ස්ථානයකින් සම්බන්ධ වී ඇත (Session Overlap).`);
@@ -437,8 +492,16 @@ if (isWebOnly) {
 }
 
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('SIGTERM received: Shutting down gracefully...');
+    try {
+        if (mongoClient && global.MY_INSTANCE_ID) {
+            await mongoClient.db('whatsapp_bot').collection('bot_settings').deleteOne({
+                _id: 'whatsapp_leader_lock',
+                leaderId: global.MY_INSTANCE_ID
+            });
+        }
+    } catch(e) {}
     process.exit(0);
 });
 
