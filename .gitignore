@@ -11,6 +11,7 @@ test_anim*.webp
 __pycache__/
 *.pyc
 *.py
+!render-api/*.py
 run_bot.bat
 Modelfile.dmc
 gate_bypass.sh
