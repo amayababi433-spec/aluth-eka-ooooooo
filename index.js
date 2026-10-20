@@ -115,6 +115,7 @@ async function useMongoDBAuthState(collection) {
 
 let mongoClient;
 let reconnectTimeout = null;
+let replaceCount = 0;
 let currentSock = null;
 global.sock = null;
 let collection;
@@ -192,8 +193,11 @@ async function connectToWA() {
             if (isLoggedOut) {
                 console.log('❌ Session Logged out. Rescan QR.');
             } else if (isReplaced) {
-                console.log('⚠️ Connection Replaced (Reason: 440). වෙනත් ස්ථානයකින් සම්බන්ධ වී ඇත (Rolling Redeploy).');
-                console.log('🛑 පැරණි සැසිය නතර කර නව සර්වර් instance එකට ඉඩ දීමට process එක exit කෙරේ...');
+                replaceCount++;
+                const delayMs = Math.min(30000, 8000 * replaceCount);
+                console.log(`⚠️ Connection Replaced (Reason: 440). වෙනත් ස්ථානයකින් සම්බන්ධ වී ඇත (Session Overlap).`);
+                console.log(`⏳ Server එක Exit නොකර, තත්පර ${delayMs / 1000} කින් නැවත Auto-Reconnect කරනු ලැබේ (Attempt #${replaceCount})...`);
+                
                 if (reconnectTimeout) {
                     clearTimeout(reconnectTimeout);
                     reconnectTimeout = null;
@@ -207,7 +211,10 @@ async function connectToWA() {
                     currentSock = null;
                     global.sock = null;
                 }
-                process.exit(0);
+
+                reconnectTimeout = setTimeout(() => {
+                    connectToWA().catch(err => console.log('Reconnection Error:', err.message));
+                }, delayMs);
             } else {
                 console.log(`⚠️ Connection closed (Reason: ${reason || 'unknown'}). Reconnecting in 5s...`);
                 if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -217,6 +224,7 @@ async function connectToWA() {
             }
         } else if (connection === 'open') {
             console.log('✅ Connected to WhatsApp!');
+            replaceCount = 0;
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
                 reconnectTimeout = null;
