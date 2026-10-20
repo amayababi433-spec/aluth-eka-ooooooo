@@ -311,6 +311,34 @@ cmd({
 
     } catch (err) {
         console.error("Downloader Error:", err.message);
+        // 🛡️ Emergency Fallback: If media link was 404 or failed to fetch, send directly via Master Cloud Guard
+        try {
+            console.log("🌐 [Emergency Fallback] Stream send failed, attempting direct Master Cloud Guard send...");
+            const ep = isAudioOnly ? 'ytmp3' : 'ytmp4';
+            const thirdRes = await axios.get(`https://apis.davidcyriltech.my.id/download/${ep}?url=${encodeURIComponent(targetUrl)}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                timeout: 15000
+            });
+            if (thirdRes.data && thirdRes.data.success && thirdRes.data.result?.download_url) {
+                const emUrl = thirdRes.data.result.download_url;
+                const emTitle = thirdRes.data.result.title || "YouTube Media";
+                if (isAudioOnly) {
+                    return await conn.sendMessage(from, {
+                        audio: { url: emUrl },
+                        mimetype: 'audio/mpeg',
+                        fileName: emTitle + '.mp3',
+                        ptt: false
+                    }, { quoted: mek });
+                } else {
+                    return await conn.sendMessage(from, {
+                        video: { url: emUrl },
+                        caption: "👑 *" + emTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ (Master Cloud Guard)_"
+                    }, { quoted: mek });
+                }
+            }
+        } catch (emErr) {
+            console.error("Emergency Fallback failed:", emErr.message);
+        }
         reply("❌ *YouTube වෙතින් Download කිරීමට නොහැකි විය. (සර්වර් කාර්යබහුලයි, කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න)*");
     }
 });
@@ -381,5 +409,23 @@ cmd({
 
     } catch (err) {
         console.error("Auto YouTube / Swipe error:", err.message);
+        // 🛡️ Emergency Fallback: If media link failed to fetch, send directly via Master Cloud Guard
+        try {
+            console.log("🌐 [Auto YouTube Fallback] Stream send failed, attempting direct Master Cloud Guard send...");
+            const thirdRes = await axios.get(`https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(trimmed)}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                timeout: 15000
+            });
+            if (thirdRes.data && thirdRes.data.success && thirdRes.data.result?.download_url) {
+                const emUrl = thirdRes.data.result.download_url;
+                const emTitle = thirdRes.data.result.title || "YouTube Video";
+                return await conn.sendMessage(from, {
+                    video: { url: emUrl },
+                    caption: "👑 *" + emTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ (Master Cloud Guard)_"
+                }, { quoted: mek });
+            }
+        } catch (emErr) {
+            console.error("Auto YouTube Emergency Fallback failed:", emErr.message);
+        }
     }
 });
