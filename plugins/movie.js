@@ -138,6 +138,168 @@ async function fetchSinhalaSubtitle(query) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 1.5 AUTO-VERIFY PORTAL BYPASS & SERVER FORMATTER (Image 2 -> Image 3)
+// ─────────────────────────────────────────────────────────────
+async function bypassPortalAndResolve(portalUrl) {
+    try {
+        let directUrl = null;
+        let fileName = null;
+        let sizeBytes = 0;
+        let sizeMb = 0;
+        let sizeFormatted = 'Direct Stream';
+        let quality = 'HD';
+        let contentType = 'video/mp4';
+
+        if (portalUrl.includes('cdn.sinhalasub.net') || portalUrl.includes('ddl.sinhalasub.net') || portalUrl.endsWith('.mp4')) {
+            directUrl = portalUrl;
+        } else {
+            const res = await axios.get(portalUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Referer': 'https://sinhalasub.lk/'
+                },
+                timeout: 10000
+            });
+
+            // Auto-verify Image 2: bypass 3 decoy verification buttons & extract real stream
+            const m = res.data.match(/var\s+zluFinalLink\s*=\s*['"]([^'"]+)['"]/i);
+            if (m && m[1]) {
+                directUrl = m[1].trim();
+            } else {
+                const $ = cheerio.load(res.data);
+                const found = $('a[href*="cdn.sinhalasub.net"], a[href*="ddl.sinhalasub.net"], a[href*="pixeldrain.com/u/"]').first().attr('href');
+                if (found) {
+                    directUrl = found;
+                }
+            }
+        }
+
+        if (!directUrl) {
+            return { success: false, error: "Direct stream link not found in portal." };
+        }
+
+        if (directUrl.includes('pixeldrain.com/u/')) {
+            const pdId = directUrl.split('/u/')[1].split('/')[0].split('?')[0];
+            directUrl = `https://pixeldrain.com/api/file/${pdId}?download`;
+        }
+
+        if (directUrl.includes('1080p') || directUrl.toLowerCase().includes('1080')) quality = '1080p FHD';
+        else if (directUrl.includes('720p') || directUrl.toLowerCase().includes('720')) quality = '720p HD';
+        else if (directUrl.includes('480p') || directUrl.toLowerCase().includes('480')) quality = '480p SD';
+
+        try {
+            const head = await axios.head(directUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                    'Referer': 'https://sinhalasub.lk/'
+                },
+                timeout: 5000
+            });
+
+            if (head.headers['content-type']) {
+                contentType = head.headers['content-type'];
+            }
+
+            const bytes = parseInt(head.headers['content-length'] || '0', 10);
+            if (bytes > 0) {
+                sizeBytes = bytes;
+                sizeMb = bytes / (1024 * 1024);
+                if (sizeMb >= 1024) {
+                    sizeFormatted = (sizeMb / 1024).toFixed(2) + ' GB';
+                } else {
+                    sizeFormatted = sizeMb.toFixed(1) + ' MB';
+                }
+
+                if (quality === 'HD') {
+                    if (sizeMb > 1100) quality = '1080p FHD';
+                    else if (sizeMb > 500) quality = '720p HD';
+                    else quality = '480p SD';
+                }
+            }
+
+            const disp = head.headers['content-disposition'];
+            if (disp) {
+                const fnMatch = disp.match(/filename\*?=['"]?(?:UTF-8'')?([^'";\n]+)['"]?/i);
+                if (fnMatch && fnMatch[1]) {
+                    fileName = decodeURIComponent(fnMatch[1].replace(/['"]/g, '').trim());
+                }
+            }
+        } catch (e) {}
+
+        if (!fileName) {
+            try {
+                const urlParts = directUrl.split('?')[0].split('/');
+                const lastPart = urlParts[urlParts.length - 1];
+                if (lastPart && (lastPart.includes('.mp4') || lastPart.includes('.mkv'))) {
+                    fileName = decodeURIComponent(lastPart);
+                }
+            } catch (e) {}
+        }
+
+        if (!fileName) {
+            fileName = `Video_${Date.now()}.mp4`;
+        }
+
+        if (!fileName.toLowerCase().endsWith('.mp4') && !fileName.toLowerCase().endsWith('.mkv')) {
+            fileName += '.mp4';
+        }
+
+        return {
+            success: true,
+            portalUrl,
+            directUrl,
+            fileName,
+            sizeBytes,
+            sizeMb,
+            sizeFormatted,
+            quality,
+            contentType
+        };
+
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+async function formatEpisodeServers(serverLinks, botNum) {
+    if (!serverLinks || serverLinks.length === 0) return "";
+
+    const topServers = serverLinks.slice(0, 5);
+    const resolved = await Promise.all(topServers.map(async (srv) => {
+        try {
+            const res = await Promise.race([
+                bypassPortalAndResolve(srv.url),
+                new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 2500))
+            ]);
+            if (res && res.success) {
+                return {
+                    name: srv.name,
+                    url: srv.url,
+                    quality: res.quality,
+                    sizeFormatted: res.sizeFormatted
+                };
+            }
+        } catch (e) {}
+        return { name: srv.name, url: srv.url };
+    }));
+
+    let text = "📥 *Direct Download Servers (Auto-Mind 1-Tap):*\n";
+    resolved.forEach((srv) => {
+        const tapDl = botNum ? createOneTapLink(botNum, `.dlep ${srv.url}`) : '';
+        const badge = srv.quality ? ` [${srv.quality}]` : '';
+        const sizeBadge = srv.sizeFormatted && srv.sizeFormatted !== 'Direct Stream' ? ` (${srv.sizeFormatted})` : '';
+
+        text += `• 🚀 *${srv.name}${badge}${sizeBadge}:*\n`;
+        if (tapDl) {
+            text += `  ╰┈➤ 👆 📥 *1-Tap Download Video (MP4 Document):*\n  ${tapDl}\n`;
+        }
+        text += `  🌐 *Portal Link:* ${srv.url}\n\n`;
+    });
+
+    return text;
+}
+
+// ─────────────────────────────────────────────────────────────
 // 2. AUTO-MIND DYNAMIC SERIES SCRAPER (Zero Hardcoding)
 // ─────────────────────────────────────────────────────────────
 async function getLiveSeriesData(query) {
@@ -453,14 +615,7 @@ cmd({
                 });
             } catch (e) {}
 
-            let serversText = "";
-            if (serverLinks.length > 0) {
-                serversText = "📥 *Direct Download Servers:*\n";
-                serverLinks.slice(0, 5).forEach(srv => {
-                    serversText += `• 🚀 *${srv.name}:* ${srv.url}\n`;
-                });
-                serversText += "\n";
-            }
+            const serversText = await formatEpisodeServers(serverLinks, botNum);
 
             const cardMsg = `👑 *ONE PIECE (NETFLIX LIVE-ACTION)* 👑\n` +
                             `🎬 *${seasonStr}E${epStr} - ${epTitle}*\n` +
@@ -592,14 +747,7 @@ cmd({
             });
         } catch (e) {}
 
-        let serversText = "";
-        if (serverLinks.length > 0) {
-            serversText = "📥 *Direct Download Servers:*\n";
-            serverLinks.slice(0, 5).forEach(srv => {
-                serversText += `• 🚀 *${srv.name}:* ${srv.url}\n`;
-            });
-            serversText += "\n";
-        }
+        const serversText = await formatEpisodeServers(serverLinks, botNum);
 
         const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${seriesName} ${seasonStr}E${epStr}`) : '';
 
@@ -617,6 +765,66 @@ cmd({
     } catch (e) {
         console.error("Episode command error:", e.message);
         reply("❌ *Episode තොරතුරු ලබා ගැනීමට නොහැකි විය.*");
+    }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 5.5 COMMAND: .dlep / .dlfilm (Auto-Verify Portal & Send MP4 Document)
+// ─────────────────────────────────────────────────────────────
+cmd({
+    pattern: "dlep",
+    alias: ["dlfilm", "getep", "sinhalasubdl", "viddl"],
+    react: "🎬",
+    desc: "Auto-Verify Secure Download Portal & Send Video Document to WhatsApp",
+    category: "download",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply }) => {
+    try {
+        if (!q) {
+            return reply("🎬 *භාවිතය:* `.dlep <Portal_URL>`\n\nඋදාහරණ:\n*.dlep https://sinhalasub.lk/links/wupim2somd/*");
+        }
+
+        const urlMatch = q.match(/https?:\/\/[^\s]+/i);
+        if (!urlMatch) {
+            return reply("❌ *වලංගු බාගත කිරීමේ Link එකක් හමු නොවීය!*");
+        }
+
+        const targetUrl = urlMatch[0];
+
+        await conn.sendPresenceUpdate('composing', from);
+        await reply("⚡ *Auto Mind: Secure Portal එක Auto-Verify කරමින් පවතී...*\n_No Ads • No 3-Step Waiting • Direct Stream Extracting..._");
+
+        const resolved = await bypassPortalAndResolve(targetUrl);
+        if (!resolved.success || !resolved.directUrl) {
+            return reply(`❌ *Portal එක Auto-Verify කිරීමට නොහැකි විය: ${resolved.error || 'Direct stream link not found'}*`);
+        }
+
+        // WhatsApp 2GB document limit check
+        if (resolved.sizeMb > 2000) {
+            return reply(`⚠️ *ගොනුවේ ප්‍රමාණය WhatsApp Document සීමාවට (2GB) වඩා වැඩියි (${resolved.sizeFormatted}).*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_Browser එකෙන් ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
+        }
+
+        await reply(`🚀 *Portal Verified! (${resolved.quality || 'HD'})*\n📦 *Size:* ${resolved.sizeFormatted}\n🎬 *File:* ${resolved.fileName}\n\n⏳ *WhatsApp Document ගොනුව (Image 3 ආකාරයට) සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_`);
+
+        try {
+            await conn.sendMessage(from, {
+                document: { url: resolved.directUrl },
+                mimetype: resolved.contentType || 'video/mp4',
+                fileName: resolved.fileName,
+                caption: `👑 *${resolved.fileName}* 👑\n\n` +
+                         `📦 *Size:* ${resolved.sizeFormatted}\n` +
+                         `🎞️ *Quality:* ${resolved.quality || 'HD'}\n` +
+                         `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                         `_Downloaded via ＤＭＣ™ (TG Engine)_`
+            }, { quoted: mek });
+        } catch (sendErr) {
+            console.error("Document Send Error:", sendErr.message);
+            await reply(`⚠️ *WhatsApp මඟින් Document එක එවීමේදී දෝෂයක් සිදු විය (${sendErr.message}).*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_මෙම ලින්ක් එකෙන් Browser එක හරහා ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
+        }
+
+    } catch (err) {
+        console.error("DLEP Command Error:", err.message);
+        reply(`❌ *වීඩියෝව එවීමේදී දෝෂයක් සිදු විය: ${err.message}*`);
     }
 });
 
@@ -804,10 +1012,35 @@ cmd({
         const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
         const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${selected.title}`) : '';
 
+        let serversText = "";
+        if (selected.link && selected.link.includes('sinhalasub.lk')) {
+            try {
+                const pageRes = await axios.get(selected.link, {
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                    timeout: 8000
+                });
+                const $m = cheerio.load(pageRes.data);
+                const serverLinks = [];
+                $m('a').each((i, el) => {
+                    const h = $m(el).attr('href') || '';
+                    const t = $m(el).text().trim();
+                    if (h.includes('/links/') && (t.includes('DLServer') || t.includes('Telagram') || t.includes('Telegram') || t.includes('Server') || t.includes('Download') || t.includes('Pixeldrain'))) {
+                        if (!serverLinks.some(s => s.url === h)) {
+                            serverLinks.push({ name: t, url: h });
+                        }
+                    }
+                });
+                if (serverLinks.length > 0) {
+                    serversText = await formatEpisodeServers(serverLinks, botNum);
+                }
+            } catch (e) {}
+        }
+
         let responseMsg = `👑 *${selected.title}* 👑\n` +
                           `🌐 *Source:* ${selected.source}\n` +
-                          `🔗 *Web Page:* ${selected.link}\n` +
-                          `⚡ *Engine:* TG Cloud\n\n`;
+                          `⚡ *Engine:* TG Cloud\n\n` +
+                          serversText +
+                          `🔗 *Web Page:* ${selected.link}\n\n`;
 
         if (oneTapSub) {
             responseMsg += `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n`;
