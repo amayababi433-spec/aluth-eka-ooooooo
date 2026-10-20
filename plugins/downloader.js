@@ -75,7 +75,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             const backupApiUrl = await getBackupApiUrl();
             const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
                 headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                timeout: 75000
+                timeout: 240000
             });
             if (backupRes.data && backupRes.data.download_url) {
                 return {
@@ -148,7 +148,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         const backupApiUrl = await getBackupApiUrl();
         const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
             headers: { 'Bypass-Tunnel-Reminder': 'true' },
-            timeout: 75000
+            timeout: 240000
         });
         if (backupRes.data && backupRes.data.download_url) {
             return {
@@ -183,13 +183,24 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
     throw new Error("Stream not found from all Primary, Backup, and Safety Net engines");
 }
 
-// Connection-safe media sender with retry logic for network stability
+// Connection-safe media sender with retry logic and Unlimited Document Failover
 async function sendMediaSafely(sock, jid, payload, options = {}, retries = 3) {
+    let currentPayload = { ...payload };
     for (let i = 0; i < retries; i++) {
         try {
-            return await sock.sendMessage(jid, payload, options);
+            return await sock.sendMessage(jid, currentPayload, options);
         } catch (err) {
             console.warn(`⚠️ [Media Send Attempt ${i + 1} Failed]: ${err.message}. Retrying in 3s...`);
+            // If standard video upload was rejected by WhatsApp (e.g. file size > 64MB), seamlessly switch to 2GB Document mode
+            if (currentPayload.video && currentPayload.video.url && i >= retries - 2) {
+                console.log(`📦 [Movie / Large File Auto-Switch] Switching to High-Speed 2GB Document mode...`);
+                currentPayload = {
+                    document: { url: currentPayload.video.url },
+                    mimetype: 'video/mp4',
+                    fileName: (options.fileName || 'Video') + '.mp4',
+                    caption: currentPayload.caption || ''
+                };
+            }
             if (i < retries - 1) {
                 await new Promise(res => setTimeout(res, 3000));
             } else {
@@ -303,11 +314,26 @@ cmd({
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
 
+        const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
+        const sizeMb = data.size_bytes ? (data.size_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
+        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : '';
+
+        if (isLargeFile && !isAudioOnly) {
+            // 🎬 Unlimited Movie Mode (Sends as pure MP4 Document up to 2GB)
+            await sendMediaSafely(conn, from, {
+                document: { url: data.download_url },
+                mimetype: 'video/mp4',
+                fileName: cleanTitle + '.mp4',
+                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ") [Movie / Large File Mode]_" + swipePrompt + oneTapPrompt
+            }, { quoted: mek, fileName: cleanTitle });
+            return;
+        }
+
         // Send Video with stylish Swipe prompt, 1-Tap link, and Engine label
         await sendMediaSafely(conn, from, {
             video: { url: data.download_url },
-            caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
-        }, { quoted: mek });
+            caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
+        }, { quoted: mek, fileName: cleanTitle });
 
     } catch (err) {
         console.error("Downloader Error:", err.message);
@@ -402,10 +428,25 @@ cmd({
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
         const engineLabel = data.engineUsed || "Primary Azure Core";
 
+        const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
+        const sizeMb = data.size_bytes ? (data.size_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
+        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : '';
+
+        if (isLargeFile) {
+            // 🎬 Unlimited Movie Mode (Sends as pure MP4 Document up to 2GB)
+            await sendMediaSafely(conn, from, {
+                document: { url: data.download_url },
+                mimetype: 'video/mp4',
+                fileName: title + '.mp4',
+                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ") [Movie / Large File Mode]_" + swipePrompt + oneTapPrompt
+            }, { quoted: mek, fileName: title });
+            return;
+        }
+
         await sendMediaSafely(conn, from, {
             video: { url: data.download_url },
-            caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
-        }, { quoted: mek });
+            caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
+        }, { quoted: mek, fileName: title });
 
     } catch (err) {
         console.error("Auto YouTube / Swipe error:", err.message);
