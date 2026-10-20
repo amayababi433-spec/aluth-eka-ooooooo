@@ -458,3 +458,73 @@ cmd({
         }
     }
 });
+
+// 3. ONE PIECE NETFLIX LIVE-ACTION & ZORO CLIP / EPISODE DOWNLOADER
+cmd({
+    pattern: "oplive",
+    alias: ["onepiecelive", "zoro", "opnetflix"],
+    react: "⚔️",
+    desc: "Download One Piece Netflix Live-Action Videos & Episodes",
+    category: "download",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply }) => {
+    try {
+        let input = q ? q.trim() : "Three Swords Zero Fear";
+        let isEp = input.toLowerCase().startsWith("ep ");
+        let searchVal = isEp ? input.split(" ")[1] || "1" : input;
+
+        await conn.sendPresenceUpdate('composing', from);
+
+        if (isEp) {
+            await reply(`⚔️ *One Piece (Live-Action) Episode ${searchVal} සොයමින් පවතී... (TG Cloud)*`);
+            const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+            const oneTapSub = botNum ? `https://wa.me/${botNum}?text=.sub%20One%20Piece%20Episode%20${searchVal}` : '';
+            return reply(`👑 *One Piece Live-Action (Episode ${searchVal})*\n\n` +
+                         `📦 *Full Episode සෙවීමට:* .movie One Piece Episode ${searchVal}\n` +
+                         `👉 🇸🇮 *1-Tap Subtitle Link:* ${oneTapSub}\n\n` +
+                         `_⚡ Engine: TG Cloud_`);
+        }
+
+        await reply(`⚔️ *One Piece Live-Action ("${searchVal}") වීඩියෝව සකසමින් පවතී...*`);
+
+        const searchQuery = `One Piece Netflix Live Action ${searchVal} HD shorts`;
+        const searchResults = await yts(searchQuery);
+
+        let targetUrl = "";
+        let clipTitle = "One Piece Live Action";
+
+        if (searchResults && searchResults.videos && searchResults.videos.length > 0) {
+            targetUrl = searchResults.videos[0].url;
+            clipTitle = searchResults.videos[0].title;
+        } else {
+            const fbRes = await yts(`One Piece ${searchVal}`);
+            if (fbRes && fbRes.videos && fbRes.videos.length > 0) {
+                targetUrl = fbRes.videos[0].url;
+                clipTitle = fbRes.videos[0].title;
+            }
+        }
+
+        if (!targetUrl) {
+            return reply("❌ *One Piece වීඩියෝව සොයාගත නොහැකි විය.*");
+        }
+
+        const data = await fetchMediaWithFailover(targetUrl, 'video');
+        if (!data || !data.download_url) {
+            return reply("❌ *වීඩියෝව ලබා ගැනීමට නොහැකි විය.*");
+        }
+
+        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+        const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
+        const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20One%20Piece` : '';
+        const engineLabel = data.engineUsed || "TG Engine";
+
+        await sendMediaSafely(conn, from, {
+            video: { url: data.download_url },
+            caption: `👑 *${clipTitle}* ⚔️😤\n#shorts #onepiece #zoro\n\n_Downloaded via ＤＭＣ™ (${engineLabel})_${oneTapPrompt}${oneTapSub}`
+        }, { quoted: mek });
+
+    } catch (err) {
+        console.error("OPLive Error:", err.message);
+        reply("❌ *One Piece වීඩියෝව ලබා ගැනීමට නොහැකි විය.*");
+    }
+});
