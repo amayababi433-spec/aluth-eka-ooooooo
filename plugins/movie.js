@@ -342,29 +342,36 @@ cmd({
         const input = q ? q.trim() : "";
         const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
 
-        // Case A: Shorts / Clips (In Picture: Zoro Three Swords, Zero Fear!)
+        // Case A: Shorts, Clips, Trailers, Teasers & Recaps (As shown in user's photo!)
+        const lowerInput = input.toLowerCase();
+        const isTrailerOrTeaser = lowerInput.includes("trailer") || lowerInput.includes("teaser") || lowerInput.includes("recap");
         const isClip = input && !input.toLowerCase().startsWith("ep") && !input.toLowerCase().startsWith("s0") && !/^\d+$/.test(input) && (
-            input.toLowerCase().includes("zoro") || 
-            input.toLowerCase().includes("sword") || 
-            input.toLowerCase().includes("clip") || 
-            input.toLowerCase().includes("short") ||
-            input.toLowerCase().includes("fear") ||
-            input.toLowerCase().includes("fight") ||
-            input.toLowerCase().includes("luffy")
+            isTrailerOrTeaser ||
+            lowerInput.includes("zoro") || 
+            lowerInput.includes("sword") || 
+            lowerInput.includes("clip") || 
+            lowerInput.includes("short") ||
+            lowerInput.includes("fear") ||
+            lowerInput.includes("fight") ||
+            lowerInput.includes("luffy")
         );
 
         if (isClip) {
             await conn.sendPresenceUpdate('composing', from);
-            await reply(`⚔️ *One Piece Live-Action Clip සොයමින් පවතී: "${input}"...*`);
+            const searchKeyword = isTrailerOrTeaser 
+                ? `ONE PIECE Netflix ${input}`
+                : `One Piece Netflix Live Action ${input} HD shorts`;
 
-            const clipData = await fetchYouTubeShortStream(`One Piece Netflix Live Action ${input} HD shorts`);
+            await reply(`⚔️ *One Piece Live-Action Video සොයමින් පවතී: "${input}"... (TG Cloud)*`);
+
+            const clipData = await fetchYouTubeShortStream(searchKeyword);
             if (clipData && clipData.download_url) {
                 const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20One%20Piece` : '';
                 const oneTapMp3 = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(clipData.targetUrl)}` : '';
 
                 return await conn.sendMessage(from, {
                     video: { url: clipData.download_url },
-                    caption: `👑 *${clipData.title}* ⚔️😤\n#shorts #onepiece #netflix\n\n_Downloaded via ＤＭＣ™ (TG Engine)_` + oneTapMp3 + oneTapSub
+                    caption: `👑 *${clipData.title}* ⚔️\n#onepiece #netflix #liveaction\n\n_Downloaded via ＤＭＣ™ (TG Engine)_` + oneTapMp3 + oneTapSub
                 }, { quoted: mek });
             }
         }
@@ -441,11 +448,16 @@ cmd({
         });
 
         menuText += `─────────────────────────\n` +
+                    `🎬 *OFFICIAL TRAILERS & TEASERS (In Photo):*\n` +
+                    `• *.oplive season 2 trailer* (Season 2 Trailer)\n` +
+                    `• *.oplive season 2 teaser* (Season 2 Teaser 1)\n` +
+                    `• *.oplive season 2 teaser 2* (Season 2 Teaser 2)\n` +
+                    `• *.oplive season 1 recap* (Season 1 Recap)\n\n` +
                     `⚔️ *POPULAR 4K/HD SHORTS & EDITS:*\n` +
                     `• *.oplive Three Swords Zero Fear* (Zoro in photo)\n` +
                     `• *.oplive zoro fight*\n` +
                     `• *.oplive luffy*\n\n` +
-                    `💡 _ඕනෑම Episode එකක් ලබා ගැනීමට අදාළ Command එක හෝ 1-Tap Subtitle Link එක ඔබන්න._`;
+                    `💡 _ඕනෑම Episode එකක් හෝ Trailer එකක් ලබා ගැනීමට අදාළ Command එක හෝ 1-Tap Subtitle Link එක ඔබන්න._`;
 
         return await conn.sendMessage(from, {
             image: { url: "https://images.alphacoders.com/132/1329583.jpeg" },
