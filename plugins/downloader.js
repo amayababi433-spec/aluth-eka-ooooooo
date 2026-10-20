@@ -12,7 +12,7 @@ const yts = require('yt-search');
 const PRIMARY_AZURE_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
 
 // 2️⃣ Backup Server: Dynamic Cloudflare / Localtunnel Backup URL resolver
-let cachedBackupUrl = 'https://dmc-backup-api.loca.lt/api/info';
+let cachedBackupUrl = 'https://condos-server-conditional-luke.trycloudflare.com/api/info';
 let lastUrlFetchTime = 0;
 
 async function getBackupApiUrl() {

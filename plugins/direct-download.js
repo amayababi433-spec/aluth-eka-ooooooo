@@ -108,7 +108,7 @@ function extractVideoFromHtml(html) {
 const TERABOX_AZURE_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
 const DISKWALA_AZURE_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
 
-let cachedBackupBase = 'https://objective-format-lamp-boutique.trycloudflare.com';
+let cachedBackupBase = 'https://condos-server-conditional-luke.trycloudflare.com';
 let lastUrlFetchTime = 0;
 
 async function getBackupBaseUrl() {
