@@ -11,8 +11,26 @@ const yts = require('yt-search');
 // 1️⃣ Primary Server: User's Azure Cloud VM (High-Speed Direct Core)
 const PRIMARY_AZURE_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
 
-// 2️⃣ Backup Server: GitHub Actions Runner (16GB RAM Cloud VM via Localtunnel)
-const BACKUP_GITHUB_API = 'https://dmc-backup-api.loca.lt/api/info';
+// 2️⃣ Backup Server: Dynamic Cloudflare / Localtunnel Backup URL resolver
+let cachedBackupUrl = 'https://dmc-backup-api.loca.lt/api/info';
+let lastUrlFetchTime = 0;
+
+async function getBackupApiUrl() {
+    if (Date.now() - lastUrlFetchTime < 180000 && cachedBackupUrl) {
+        return cachedBackupUrl;
+    }
+    try {
+        const res = await axios.get('https://raw.githubusercontent.com/dimdtu0-cell/dmc-backup-api/main/api_url.txt?t=' + Date.now(), { timeout: 5000 });
+        if (res.data && res.data.trim().startsWith('https://')) {
+            cachedBackupUrl = res.data.trim().replace(/\/$/, '') + '/api/info';
+            lastUrlFetchTime = Date.now();
+            console.log('📡 [DYNAMIC BACKUP] Resolved live Cloudflare backup URL:', cachedBackupUrl);
+        }
+    } catch (e) {
+        // fallback to current cachedBackupUrl
+    }
+    return cachedBackupUrl;
+}
 
 // Smart Failover Engine: Primary Azure (15s) ──► Fail/Busy? ──► Auto GitHub Actions Backup (35s)
 async function fetchMediaWithFailover(videoUrl, type = 'video') {
@@ -35,9 +53,10 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         console.warn(`⚠️ [FAILOVER TRIGGERED] Primary Azure API busy/down (${primaryErr.message}). Switching to GitHub Actions Backup...`);
     }
 
-    // 2️⃣ Failover Attempt: Secondary GitHub Actions Runner Backup
+    // 2️⃣ Failover Attempt: Secondary GitHub Actions Runner Backup (Dynamic Cloudflare/Localtunnel)
     try {
-        const backupRes = await axios.get(BACKUP_GITHUB_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+        const backupApiUrl = await getBackupApiUrl();
+        const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
             headers: { 'Bypass-Tunnel-Reminder': 'true' },
             timeout: 35000
         });
