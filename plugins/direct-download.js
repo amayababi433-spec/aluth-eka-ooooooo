@@ -135,19 +135,31 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
         let res;
         let engineUsed = "Azure Core Engine";
 
-        // 1️⃣ Attempt Primary Azure Cloud Server (25s)
-        try {
-            res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-                timeout: 25000
-            });
-            if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
-        } catch (azureErr) {
-            console.warn("⚠️ Azure TeraBox busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
-            engineUsed = "GitHub Actions Backup";
+        const routing = global.DOWNLOAD_ROUTING || { terabox: 'auto', all: 'auto' };
+        const mode = (routing.all && routing.all !== 'auto') ? routing.all : (routing.terabox || 'auto');
+
+        if (mode === 'azure') {
+            engineUsed = "Azure Core (Manual Mode)";
+            res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), { timeout: 35000 });
+        } else if (mode === 'github') {
+            engineUsed = "GitHub Actions (Manual Mode)";
             const backupBase = await getBackupBaseUrl();
-            res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), {
-                timeout: 45000
-            });
+            res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), { timeout: 45000 });
+        } else {
+            // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to GitHub Actions
+            try {
+                res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                    timeout: 25000
+                });
+                if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
+            } catch (azureErr) {
+                console.warn("⚠️ Azure TeraBox busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
+                engineUsed = "GitHub Actions Backup";
+                const backupBase = await getBackupBaseUrl();
+                res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), {
+                    timeout: 45000
+                });
+            }
         }
 
         if (!res.data || !res.data.download_url) {
@@ -198,24 +210,42 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
         let res;
         let engineUsed = "Azure Core Engine";
 
-        // 1️⃣ Attempt Primary Azure Cloud Server (25s)
-        try {
+        const routing = global.DOWNLOAD_ROUTING || { terabox: 'auto', all: 'auto' };
+        const mode = (routing.all && routing.all !== 'auto') ? routing.all : (routing.terabox || 'auto');
+
+        if (mode === 'azure') {
+            engineUsed = "Azure Core (Manual Mode)";
             res = await axios.get(DISKWALA_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-                timeout: 25000,
+                timeout: 35000,
                 validateStatus: (status) => status < 500
             });
-            if (res.status === 404 || res.data?.error?.includes('404')) {
-                return reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");
-            }
-            if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
-        } catch (azureErr) {
-            console.warn("⚠️ Azure DiskWala busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
-            engineUsed = "GitHub Actions Backup";
+        } else if (mode === 'github') {
+            engineUsed = "GitHub Actions (Manual Mode)";
             const backupBase = await getBackupBaseUrl();
             res = await axios.get(backupBase + '/api/diskwala?url=' + encodeURIComponent(targetUrl), {
                 timeout: 45000,
                 validateStatus: (status) => status < 500
             });
+        } else {
+            // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to GitHub Actions
+            try {
+                res = await axios.get(DISKWALA_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                    timeout: 25000,
+                    validateStatus: (status) => status < 500
+                });
+                if (res.status === 404 || res.data?.error?.includes('404')) {
+                    return reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");
+                }
+                if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
+            } catch (azureErr) {
+                console.warn("⚠️ Azure DiskWala busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
+                engineUsed = "GitHub Actions Backup";
+                const backupBase = await getBackupBaseUrl();
+                res = await axios.get(backupBase + '/api/diskwala?url=' + encodeURIComponent(targetUrl), {
+                    timeout: 45000,
+                    validateStatus: (status) => status < 500
+                });
+            }
         }
 
         if (res.status === 404 || res.data?.error?.includes('404')) {

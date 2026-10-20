@@ -32,11 +32,45 @@ async function getBackupApiUrl() {
     return cachedBackupUrl;
 }
 
-// Smart Failover Engine: Primary Azure (15s) ──► Fail/Busy? ──► Auto GitHub Actions Backup (35s)
+// Smart Failover & Manual Routing Engine
 async function fetchMediaWithFailover(videoUrl, type = 'video') {
+    const routing = global.DOWNLOAD_ROUTING || { yt: 'auto', all: 'auto' };
+    const mode = (routing.all && routing.all !== 'auto') ? routing.all : (routing.yt || 'auto');
+
+    // 1️⃣ Manual Mode: Force Azure Cloud Server Only
+    if (mode === 'azure') {
+        const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+            headers: { 'Bypass-Tunnel-Reminder': 'true' },
+            timeout: 30000
+        });
+        if (res.data && res.data.download_url) {
+            return {
+                ...res.data,
+                engineUsed: 'Azure Core (Manual Mode)'
+            };
+        }
+        throw new Error(res.data?.error || "Azure server returned no download_url");
+    }
+
+    // 2️⃣ Manual Mode: Force GitHub Actions Backup Only
+    if (mode === 'github') {
+        const backupApiUrl = await getBackupApiUrl();
+        const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+            headers: { 'Bypass-Tunnel-Reminder': 'true' },
+            timeout: 40000
+        });
+        if (backupRes.data && backupRes.data.download_url) {
+            return {
+                ...backupRes.data,
+                engineUsed: 'GitHub Actions (Manual Mode)'
+            };
+        }
+        throw new Error(backupRes.data?.error || "GitHub Actions backup returned no download_url");
+    }
+
+    // 3️⃣ Smart Auto Failover Mode (Azure Primary 15s ──► Fail? ──► GitHub Actions Backup 35s)
     let lastErr = null;
 
-    // 1️⃣ First Attempt: Primary Azure Cloud Server
     try {
         const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
             headers: { 'Bypass-Tunnel-Reminder': 'true' },
@@ -53,7 +87,6 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         console.warn(`⚠️ [FAILOVER TRIGGERED] Primary Azure API busy/down (${primaryErr.message}). Switching to GitHub Actions Backup...`);
     }
 
-    // 2️⃣ Failover Attempt: Secondary GitHub Actions Runner Backup (Dynamic Cloudflare/Localtunnel)
     try {
         const backupApiUrl = await getBackupApiUrl();
         const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
