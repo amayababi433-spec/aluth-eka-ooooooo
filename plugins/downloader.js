@@ -27,6 +27,22 @@ async function fetchFromAzure(videoUrl, type = 'video') {
     return backupRes.data;
 }
 
+// Connection-safe media sender with retry logic for network stability
+async function sendMediaSafely(sock, jid, payload, options = {}, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await sock.sendMessage(jid, payload, options);
+        } catch (err) {
+            console.warn(`⚠️ [Media Send Attempt ${i + 1} Failed]: ${err.message}. Retrying in 3s...`);
+            if (i < retries - 1) {
+                await new Promise(res => setTimeout(res, 3000));
+            } else {
+                throw err;
+            }
+        }
+    }
+}
+
 // ----------------------------------------------------
 // Secret Zero-Width Invisible Character Encoder/Decoder
 // ----------------------------------------------------
@@ -113,7 +129,7 @@ cmd({
         const cleanTitle = (data.title && data.title !== "- YouTube" && data.title !== "YouTube") ? data.title : (searchTitle || (isAudioOnly ? "Audio Track" : "Video"));
 
         if (isAudioOnly) {
-            await conn.sendMessage(from, {
+            await sendMediaSafely(conn, from, {
                 audio: { url: data.download_url },
                 mimetype: 'audio/mpeg',
                 fileName: cleanTitle + '.mp3',
@@ -131,7 +147,7 @@ cmd({
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
 
         // Send Video with stylish Swipe prompt and 1-Tap link
-        await conn.sendMessage(from, {
+        await sendMediaSafely(conn, from, {
             video: { url: data.download_url },
             caption: "👑 *" + cleanTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt + oneTapPrompt
         }, { quoted: mek });
@@ -200,7 +216,7 @@ cmd({
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
 
-        await conn.sendMessage(from, {
+        await sendMediaSafely(conn, from, {
             video: { url: data.download_url },
             caption: "👑 *" + title + "* 👑\n\n_Downloaded via ＤＭＣ™ Core (Playwright Engine)_" + swipePrompt + oneTapPrompt
         }, { quoted: mek });

@@ -192,11 +192,22 @@ async function connectToWA() {
             if (isLoggedOut) {
                 console.log('❌ Session Logged out. Rescan QR.');
             } else if (isReplaced) {
-                console.log(`⚠️ Connection Replaced (Reason: 440). Active elsewhere or rolling redeploy. Reconnecting in 10s without killing container...`);
-                if (reconnectTimeout) clearTimeout(reconnectTimeout);
-                reconnectTimeout = setTimeout(() => {
-                    connectToWA().catch(err => console.log('Reconnection Error:', err));
-                }, 10000);
+                console.log('⚠️ Connection Replaced (Reason: 440). වෙනත් ස්ථානයකින් සම්බන්ධ වී ඇත (Rolling Redeploy).');
+                console.log('🛑 පැරණි සැසිය නතර කර නව සර්වර් instance එකට ඉඩ දීමට process එක exit කෙරේ...');
+                if (reconnectTimeout) {
+                    clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
+                }
+                if (currentSock) {
+                    try {
+                        currentSock.ev.removeAllListeners();
+                        currentSock.ws?.close();
+                        currentSock.end?.(undefined);
+                    } catch (e) {}
+                    currentSock = null;
+                    global.sock = null;
+                }
+                process.exit(0);
             } else {
                 console.log(`⚠️ Connection closed (Reason: ${reason || 'unknown'}). Reconnecting in 5s...`);
                 if (reconnectTimeout) clearTimeout(reconnectTimeout);
