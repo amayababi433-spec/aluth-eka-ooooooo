@@ -145,32 +145,32 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
                 res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), { timeout: 35000 });
                 if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
             } catch (azErr) {
-                console.warn("⚠️ Azure TeraBox failed, auto-failover to GitHub Runner...", azErr.message);
-                engineUsed = "GitHub Actions (Failover Guard)";
+                console.warn("⚠️ Azure TeraBox failed, auto-failover to TG...", azErr.message);
+                engineUsed = "TG (Failover Guard)";
                 const backupBase = await getBackupBaseUrl();
                 res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), { timeout: 45000 });
             }
-        } else if (mode === 'github') {
+        } else if (mode === 'github' || mode === 'tg') {
             try {
-                engineUsed = "GitHub Actions Runner";
+                engineUsed = "TG Runner";
                 const backupBase = await getBackupBaseUrl();
                 res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), { timeout: 40000 });
-                if (!res.data || !res.data.download_url) throw new Error("No download_url from GitHub");
+                if (!res.data || !res.data.download_url) throw new Error("No download_url from TG");
             } catch (ghErr) {
-                console.warn("⚠️ GitHub TeraBox failed, auto-failover to Azure Core...", ghErr.message);
+                console.warn("⚠️ TG TeraBox failed, auto-failover to Azure Core...", ghErr.message);
                 engineUsed = "Azure Core (Failover Guard)";
                 res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), { timeout: 30000 });
             }
         } else {
-            // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to GitHub Actions
+            // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to TG
             try {
                 res = await axios.get(TERABOX_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
                     timeout: 25000
                 });
                 if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
             } catch (azureErr) {
-                console.warn("⚠️ Azure TeraBox busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
-                engineUsed = "GitHub Actions Backup";
+                console.warn("⚠️ Azure TeraBox busy/slow, switching to TG Backup...", azureErr.message);
+                engineUsed = "TG Backup";
                 const backupBase = await getBackupBaseUrl();
                 res = await axios.get(backupBase + '/api/terabox?url=' + encodeURIComponent(targetUrl), {
                     timeout: 45000
@@ -235,15 +235,15 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
                 timeout: 35000,
                 validateStatus: (status) => status < 500
             });
-        } else if (mode === 'github') {
-            engineUsed = "GitHub Actions (Manual Mode)";
+        } else if (mode === 'github' || mode === 'tg') {
+            engineUsed = "TG (Manual Mode)";
             const backupBase = await getBackupBaseUrl();
             res = await axios.get(backupBase + '/api/diskwala?url=' + encodeURIComponent(targetUrl), {
                 timeout: 45000,
                 validateStatus: (status) => status < 500
             });
         } else {
-            // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to GitHub Actions
+            // 1️⃣ Attempt Primary Azure Cloud Server (25s) with failover to TG
             try {
                 res = await axios.get(DISKWALA_AZURE_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
                     timeout: 25000,
@@ -254,8 +254,8 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
                 }
                 if (!res.data || !res.data.download_url) throw new Error("No download_url from Azure");
             } catch (azureErr) {
-                console.warn("⚠️ Azure DiskWala busy/slow, switching to GitHub Actions Cloud Backup...", azureErr.message);
-                engineUsed = "GitHub Actions Backup";
+                console.warn("⚠️ Azure DiskWala busy/slow, switching to TG Backup...", azureErr.message);
+                engineUsed = "TG Backup";
                 const backupBase = await getBackupBaseUrl();
                 res = await axios.get(backupBase + '/api/diskwala?url=' + encodeURIComponent(targetUrl), {
                     timeout: 45000,

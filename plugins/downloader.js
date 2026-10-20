@@ -53,7 +53,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             }
             throw new Error(res.data?.error || "Azure server returned no download_url");
         } catch (azErr) {
-            console.warn(`⚠️ [Azure Server Issue]: ${azErr.message}. Auto-failover to GitHub Runner...`);
+            console.warn(`⚠️ [Azure Server Issue]: ${azErr.message}. Auto-failover to TG...`);
             const backupApiUrl = await getBackupApiUrl();
             const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
                 headers: { 'Bypass-Tunnel-Reminder': 'true' },
@@ -62,15 +62,15 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             if (backupRes.data && backupRes.data.download_url) {
                 return {
                     ...backupRes.data,
-                    engineUsed: 'GitHub Actions (Failover Guard)'
+                    engineUsed: 'TG (Failover Guard)'
                 };
             }
             throw azErr;
         }
     }
 
-    // 2️⃣ Preferred Mode: GitHub Actions Runner (High-Speed & Unlimited File Size)
-    if (mode === 'github') {
+    // 2️⃣ Preferred Mode: TG Runner (High-Speed & Unlimited File Size)
+    if (mode === 'github' || mode === 'tg') {
         try {
             const backupApiUrl = await getBackupApiUrl();
             const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
@@ -80,12 +80,12 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             if (backupRes.data && backupRes.data.download_url) {
                 return {
                     ...backupRes.data,
-                    engineUsed: 'GitHub Actions Runner (1Gbps High-Speed)'
+                    engineUsed: 'TG (1Gbps High-Speed)'
                 };
             }
-            throw new Error(backupRes.data?.error || "GitHub Actions backup returned no download_url");
+            throw new Error(backupRes.data?.error || "TG backup returned no download_url");
         } catch (ghErr) {
-            console.warn(`⚠️ [GitHub Runner Issue]: ${ghErr.message}. Checking failover guard...`);
+            console.warn(`⚠️ [TG Issue]: ${ghErr.message}. Checking failover guard...`);
             try {
                 // Lightweight Azure check (does not overload Azure free tier)
                 const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
@@ -142,7 +142,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         }
     } catch (primaryErr) {
         lastErr = primaryErr;
-        console.warn(`⚠️ [FAILOVER TRIGGERED] Primary Azure API busy/down (${primaryErr.message}). Switching to GitHub Actions Backup...`);
+        console.warn(`⚠️ [FAILOVER TRIGGERED] Primary Azure API busy/down (${primaryErr.message}). Switching to TG Backup...`);
     }
 
     try {
@@ -154,11 +154,11 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         if (backupRes.data && backupRes.data.download_url) {
             return {
                 ...backupRes.data,
-                engineUsed: 'Backup Cloud Failover'
+                engineUsed: 'TG Cloud Failover'
             };
         }
     } catch (backupErr) {
-        console.warn(`⚠️ GitHub backup failed (${backupErr.message}). Trying Master Safety Net...`);
+        console.warn(`⚠️ TG backup failed (${backupErr.message}). Trying Master Safety Net...`);
     }
 
     // 🛡️ Master Safety Net (Tier 3 Decentralized Engine - Never Fails)
@@ -303,6 +303,7 @@ cmd({
         const secretCode = encodeInvisible("DMC_AUDIO:" + targetUrl);
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
+        const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20${encodeURIComponent(cleanTitle)}` : '';
 
         // Send Video with stylish Swipe prompt, 1-Tap link, and Engine label
         const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
@@ -314,12 +315,12 @@ cmd({
                 document: { url: data.download_url },
                 mimetype: 'video/mp4',
                 fileName: cleanTitle + '.mp4',
-                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt
+                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt + oneTapSub
             }, { quoted: mek });
         } else {
             await sendMediaSafely(conn, from, {
                 video: { url: data.download_url },
-                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
+                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt + oneTapSub
             }, { quoted: mek });
         }
 
@@ -414,6 +415,7 @@ cmd({
         const secretCode = encodeInvisible("DMC_AUDIO:" + trimmed);
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
+        const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20${encodeURIComponent(title)}` : '';
         const engineLabel = data.engineUsed || "Primary Azure Core";
 
         const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
@@ -425,12 +427,12 @@ cmd({
                 document: { url: data.download_url },
                 mimetype: 'video/mp4',
                 fileName: title + '.mp4',
-                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt
+                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt + oneTapSub
             }, { quoted: mek });
         } else {
             await sendMediaSafely(conn, from, {
                 video: { url: data.download_url },
-                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
+                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt + oneTapSub
             }, { quoted: mek });
         }
 
