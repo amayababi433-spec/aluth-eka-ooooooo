@@ -75,7 +75,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             const backupApiUrl = await getBackupApiUrl();
             const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
                 headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                timeout: 35000
+                timeout: 75000
             });
             if (backupRes.data && backupRes.data.download_url) {
                 return {
@@ -127,7 +127,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         const backupApiUrl = await getBackupApiUrl();
         const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
             headers: { 'Bypass-Tunnel-Reminder': 'true' },
-            timeout: 35000
+            timeout: 75000
         });
         if (backupRes.data && backupRes.data.download_url) {
             return {
