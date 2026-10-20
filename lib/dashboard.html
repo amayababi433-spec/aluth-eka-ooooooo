@@ -1346,7 +1346,7 @@
                 const connText = document.getElementById('connText');
                 if (d.connected) {
                     connBadge.className = 'badge badge-live';
-                    connText.innerText = `Online (${d.botNumber || 'WA'})`;
+                    connText.innerText = `Online (${d.botNumber ? '+' + d.botNumber : 'WA'})`;
                 } else {
                     connBadge.className = 'badge badge-offline';
                     connText.innerText = 'Offline / Connecting';
@@ -1366,7 +1366,7 @@
                 document.getElementById('metricBotMode').style.color = isPub ? 'var(--primary)' : 'var(--warning)';
 
                 document.getElementById('metricUptime').innerText = d.uptimeFmt || '0s';
-                document.getElementById('metricPlatform').innerText = `OS: ${d.platform || ''} • Node: ${d.nodeVersion || ''}`;
+                document.getElementById('metricPlatform').innerText = (d.botHost ? `Host: ${d.botHost} • ` : '') + `OS: ${d.platform || ''} • Node: ${d.nodeVersion || ''}`;
 
                 if (d.ram) {
                     document.getElementById('metricRam').innerText = `${d.ram.heapUsedMB} MB`;

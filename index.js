@@ -239,6 +239,23 @@ async function connectToWA() {
             const isLoggedOut = (reason === DisconnectReason.loggedOut || reason === 401);
             const isReplaced = (reason === DisconnectReason.connectionReplaced || reason === 440);
 
+            if (global.liveStatusHeartbeat) {
+                clearInterval(global.liveStatusHeartbeat);
+                global.liveStatusHeartbeat = null;
+            }
+            if (global.outboxTimer) {
+                clearInterval(global.outboxTimer);
+                global.outboxTimer = null;
+            }
+            if (global.modeSyncTimer) {
+                clearInterval(global.modeSyncTimer);
+                global.modeSyncTimer = null;
+            }
+            lockCollection.updateOne(
+                { _id: 'live_bot_status' },
+                { $set: { connected: false, lastSeen: Date.now(), updatedAt: new Date() } }
+            ).catch(() => {});
+
             if (isLoggedOut) {
                 console.log('❌ Session Logged out. Rescan QR.');
             } else if (isReplaced) {
@@ -289,6 +306,72 @@ async function connectToWA() {
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
                 reconnectTimeout = null;
+            }
+
+            // Sync live status with MongoDB for Web Dashboard
+            const myNum = sock?.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : null;
+            const myName = sock?.user?.name || 'Sew Queen Bot (DMC™ MD)';
+            const hostInfo = process.env.KOYEB_APP_NAME ? `Koyeb (${process.env.KOYEB_APP_NAME})` : (process.env.RENDER_SERVICE_NAME ? `Render (${process.env.RENDER_SERVICE_NAME})` : os.hostname());
+
+            const pushLiveStatus = async (isLive = true) => {
+                try {
+                    await lockCollection.updateOne(
+                        { _id: 'live_bot_status' },
+                        {
+                            $set: {
+                                connected: isLive,
+                                botNumber: myNum,
+                                botName: myName,
+                                host: hostInfo,
+                                mode: global.BOT_MODE || 'public',
+                                uptimeSec: Math.floor(process.uptime()),
+                                lastSeen: Date.now(),
+                                updatedAt: new Date()
+                            }
+                        },
+                        { upsert: true }
+                    );
+                } catch (e) {}
+            };
+
+            pushLiveStatus(true).catch(() => {});
+
+            if (global.liveStatusHeartbeat) clearInterval(global.liveStatusHeartbeat);
+            global.liveStatusHeartbeat = setInterval(() => {
+                if (currentSock && currentSock.user) {
+                    pushLiveStatus(true).catch(() => {});
+                }
+            }, 5000);
+
+            // Sync bot mode from MongoDB every 5 seconds so dashboard changes take effect on bot
+            if (global.modeSyncTimer) clearInterval(global.modeSyncTimer);
+            global.modeSyncTimer = setInterval(async () => {
+                try {
+                    const mDoc = await lockCollection.findOne({ _id: 'bot_mode' });
+                    if (mDoc && mDoc.mode && global.BOT_MODE !== mDoc.mode) {
+                        console.log(`📡 [Mode Sync] Mode updated from MongoDB: ${global.BOT_MODE} -> ${mDoc.mode}`);
+                        global.BOT_MODE = mDoc.mode;
+                    }
+                } catch (e) {}
+            }, 5000);
+
+            // Process outbox messages queued from Web Dashboard
+            if (!global.outboxTimer) {
+                global.outboxTimer = setInterval(async () => {
+                    if (!currentSock || !currentSock.user) return;
+                    try {
+                        const outboxCol = db.collection('whatsapp_outbox');
+                        const pendingMessages = await outboxCol.find({ status: 'pending' }).limit(5).toArray();
+                        for (const item of pendingMessages) {
+                            try {
+                                await currentSock.sendMessage(item.jid, { text: item.message });
+                                await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'sent', sentAt: new Date() } });
+                            } catch (sendErr) {
+                                await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'failed', error: sendErr.message } });
+                            }
+                        }
+                    } catch (e) {}
+                }, 2000);
             }
             
             if (!pluginsLoaded) {
