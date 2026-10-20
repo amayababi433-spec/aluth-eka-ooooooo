@@ -69,27 +69,28 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         }
     }
 
-    // 2️⃣ Preferred Mode: GitHub Actions Runner (with Auto Azure Failover Guard)
+    // 2️⃣ Preferred Mode: GitHub Actions Runner (High-Speed & Unlimited File Size)
     if (mode === 'github') {
         try {
             const backupApiUrl = await getBackupApiUrl();
             const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
                 headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                timeout: 240000
+                timeout: 300000 // 5 minutes for full-length movies and 1080p videos
             });
             if (backupRes.data && backupRes.data.download_url) {
                 return {
                     ...backupRes.data,
-                    engineUsed: 'GitHub Actions Runner'
+                    engineUsed: 'GitHub Actions Runner (1Gbps High-Speed)'
                 };
             }
             throw new Error(backupRes.data?.error || "GitHub Actions backup returned no download_url");
         } catch (ghErr) {
-            console.warn(`⚠️ [GitHub Runner Issue]: ${ghErr.message}. Auto-switching to Azure Cloud Server to ensure 100% download success!`);
+            console.warn(`⚠️ [GitHub Runner Issue]: ${ghErr.message}. Checking failover guard...`);
             try {
+                // Lightweight Azure check (does not overload Azure free tier)
                 const res = await axios.get(PRIMARY_AZURE_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
                     headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                    timeout: 25000
+                    timeout: 20000
                 });
                 if (res.data && res.data.download_url) {
                     return {
@@ -98,7 +99,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
                     };
                 }
             } catch (azErr) {
-                console.error('Azure failover also failed:', azErr.message);
+                console.error('Azure failover skipped/failed:', azErr.message);
             }
 
             // 🛡️ Master Safety Net (Tier 3 Decentralized Engine - Never Fails)
@@ -148,7 +149,7 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
         const backupApiUrl = await getBackupApiUrl();
         const backupRes = await axios.get(backupApiUrl + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
             headers: { 'Bypass-Tunnel-Reminder': 'true' },
-            timeout: 240000
+            timeout: 75000
         });
         if (backupRes.data && backupRes.data.download_url) {
             return {
@@ -183,24 +184,13 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
     throw new Error("Stream not found from all Primary, Backup, and Safety Net engines");
 }
 
-// Connection-safe media sender with retry logic and Unlimited Document Failover
+// Connection-safe media sender with retry logic for network stability
 async function sendMediaSafely(sock, jid, payload, options = {}, retries = 3) {
-    let currentPayload = { ...payload };
     for (let i = 0; i < retries; i++) {
         try {
-            return await sock.sendMessage(jid, currentPayload, options);
+            return await sock.sendMessage(jid, payload, options);
         } catch (err) {
             console.warn(`⚠️ [Media Send Attempt ${i + 1} Failed]: ${err.message}. Retrying in 3s...`);
-            // If standard video upload was rejected by WhatsApp (e.g. file size > 64MB), seamlessly switch to 2GB Document mode
-            if (currentPayload.video && currentPayload.video.url && i >= retries - 2) {
-                console.log(`📦 [Movie / Large File Auto-Switch] Switching to High-Speed 2GB Document mode...`);
-                currentPayload = {
-                    document: { url: currentPayload.video.url },
-                    mimetype: 'video/mp4',
-                    fileName: (options.fileName || 'Video') + '.mp4',
-                    caption: currentPayload.caption || ''
-                };
-            }
             if (i < retries - 1) {
                 await new Promise(res => setTimeout(res, 3000));
             } else {
@@ -314,26 +304,24 @@ cmd({
         const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
         const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(targetUrl)}` : '';
 
+        // Send Video with stylish Swipe prompt, 1-Tap link, and Engine label
         const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
         const sizeMb = data.size_bytes ? (data.size_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
-        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : '';
+        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : "";
 
-        if (isLargeFile && !isAudioOnly) {
-            // 🎬 Unlimited Movie Mode (Sends as pure MP4 Document up to 2GB)
+        if (isLargeFile) {
             await sendMediaSafely(conn, from, {
                 document: { url: data.download_url },
                 mimetype: 'video/mp4',
                 fileName: cleanTitle + '.mp4',
-                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ") [Movie / Large File Mode]_" + swipePrompt + oneTapPrompt
-            }, { quoted: mek, fileName: cleanTitle });
-            return;
+                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt
+            }, { quoted: mek });
+        } else {
+            await sendMediaSafely(conn, from, {
+                video: { url: data.download_url },
+                caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
+            }, { quoted: mek });
         }
-
-        // Send Video with stylish Swipe prompt, 1-Tap link, and Engine label
-        await sendMediaSafely(conn, from, {
-            video: { url: data.download_url },
-            caption: "👑 *" + cleanTitle + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
-        }, { quoted: mek, fileName: cleanTitle });
 
     } catch (err) {
         console.error("Downloader Error:", err.message);
@@ -430,23 +418,21 @@ cmd({
 
         const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
         const sizeMb = data.size_bytes ? (data.size_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
-        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : '';
+        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : "";
 
         if (isLargeFile) {
-            // 🎬 Unlimited Movie Mode (Sends as pure MP4 Document up to 2GB)
             await sendMediaSafely(conn, from, {
                 document: { url: data.download_url },
                 mimetype: 'video/mp4',
                 fileName: title + '.mp4',
-                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ") [Movie / Large File Mode]_" + swipePrompt + oneTapPrompt
-            }, { quoted: mek, fileName: title });
-            return;
+                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt
+            }, { quoted: mek });
+        } else {
+            await sendMediaSafely(conn, from, {
+                video: { url: data.download_url },
+                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
+            }, { quoted: mek });
         }
-
-        await sendMediaSafely(conn, from, {
-            video: { url: data.download_url },
-            caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt
-        }, { quoted: mek, fileName: title });
 
     } catch (err) {
         console.error("Auto YouTube / Swipe error:", err.message);
