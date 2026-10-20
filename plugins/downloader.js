@@ -100,11 +100,32 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             } catch (azErr) {
                 console.error('Azure failover also failed:', azErr.message);
             }
+
+            // 🛡️ Master Safety Net (Tier 3 Decentralized Engine - Never Fails)
+            try {
+                console.log(`🌐 [Master Safety Net] Fetching stream via Tier 3...`);
+                const ep = type === 'audio' ? 'ytmp3' : 'ytmp4';
+                const thirdRes = await axios.get(`https://apis.davidcyriltech.my.id/download/${ep}?url=${encodeURIComponent(videoUrl)}`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    timeout: 15000
+                });
+                if (thirdRes.data && thirdRes.data.success && thirdRes.data.result?.download_url) {
+                    return {
+                        title: thirdRes.data.result.title || "YouTube Media",
+                        download_url: thirdRes.data.result.download_url,
+                        video_url: thirdRes.data.result.download_url,
+                        engineUsed: 'Master Cloud Guard'
+                    };
+                }
+            } catch (tier3Err) {
+                console.error('Tier 3 fallback error:', tier3Err.message);
+            }
+
             throw ghErr;
         }
     }
 
-    // 3️⃣ Smart Auto Failover Mode (Azure Primary 15s ──► Fail? ──► GitHub Actions Backup 35s)
+    // 3️⃣ Smart Auto Failover Mode (Azure Primary 15s ──► Fail? ──► GitHub Actions Backup 75s)
     let lastErr = null;
 
     try {
@@ -136,11 +157,30 @@ async function fetchMediaWithFailover(videoUrl, type = 'video') {
             };
         }
     } catch (backupErr) {
-        console.error(`❌ [ALL ENGINES FAILED] Azure: ${lastErr?.message} | GitHub: ${backupErr.message}`);
-        throw new Error(backupErr.message || lastErr?.message || "Both download engines failed");
+        console.warn(`⚠️ GitHub backup failed (${backupErr.message}). Trying Master Safety Net...`);
     }
 
-    throw new Error("Stream not found from both Primary and Backup engines");
+    // 🛡️ Master Safety Net (Tier 3 Decentralized Engine - Never Fails)
+    try {
+        console.log(`🌐 [Master Safety Net] Fetching stream via Tier 3...`);
+        const ep = type === 'audio' ? 'ytmp3' : 'ytmp4';
+        const thirdRes = await axios.get(`https://apis.davidcyriltech.my.id/download/${ep}?url=${encodeURIComponent(videoUrl)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 15000
+        });
+        if (thirdRes.data && thirdRes.data.success && thirdRes.data.result?.download_url) {
+            return {
+                title: thirdRes.data.result.title || "YouTube Media",
+                download_url: thirdRes.data.result.download_url,
+                video_url: thirdRes.data.result.download_url,
+                engineUsed: 'Master Cloud Guard'
+            };
+        }
+    } catch (tier3Err) {
+        console.error('Tier 3 fallback error:', tier3Err.message);
+    }
+
+    throw new Error("Stream not found from all Primary, Backup, and Safety Net engines");
 }
 
 // Connection-safe media sender with retry logic for network stability
