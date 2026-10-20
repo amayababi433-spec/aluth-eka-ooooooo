@@ -104,17 +104,28 @@ function extractVideoFromHtml(html) {
     return null;
 }
 
-const TERABOX_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
-const DISKWALA_API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
+// ✅ Render.com Free APIs + Azure Backup Failover
+const TERABOX_API_ENDPOINT = 'https://dmc-downloader-api.onrender.com/api/terabox';
+const TERABOX_BACKUP_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
+const DISKWALA_API_ENDPOINT = 'https://dmc-downloader-api.onrender.com/api/diskwala';
+const DISKWALA_BACKUP_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
 
 // Dedicated TeraBox download handler using Azure Playwright Cloud Engine
 async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
     try {
         await reply("⏳ *TeraBox ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
-        const res = await axios.get(TERABOX_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 110000
-        });
+        let res;
+        try {
+            res = await axios.get(TERABOX_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                timeout: 35000
+            });
+        } catch (e) {
+            console.warn("Render TeraBox busy, using Azure backup...", e.message);
+            res = await axios.get(TERABOX_BACKUP_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                timeout: 90000
+            });
+        }
 
         if (!res.data || !res.data.download_url) {
             return reply("❌ *TeraBox වීඩියෝව ලබා ගැනීමට නොහැකි විය.*");
@@ -161,10 +172,19 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
     try {
         await reply("⏳ *DiskWala ලින්ක් එක හඳුනාගන්නා ලදී. Azure Playwright Engine මඟින් වීඩියෝව සකසමින් පවතී (තත්පර 15-20 ක් ගත විය හැක)...*");
 
-        const res = await axios.get(DISKWALA_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
-            timeout: 110000,
-            validateStatus: (status) => status < 500
-        });
+        let res;
+        try {
+            res = await axios.get(DISKWALA_API_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                timeout: 35000,
+                validateStatus: (status) => status < 500
+            });
+        } catch (e) {
+            console.warn("Render DiskWala busy, using Azure backup...", e.message);
+            res = await axios.get(DISKWALA_BACKUP_ENDPOINT + '?url=' + encodeURIComponent(targetUrl), {
+                timeout: 90000,
+                validateStatus: (status) => status < 500
+            });
+        }
 
         if (res.status === 404 || res.data?.error?.includes('404')) {
             return reply("❌ *DiskWala 404 Error: මෙම වීඩියෝව DiskWala සර්වරයෙන් ඉවත් කර ඇත හෝ Link එක අවලංගුයි.*");

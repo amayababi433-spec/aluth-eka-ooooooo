@@ -7,14 +7,24 @@ const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
 
-const API_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
+// ✅ Render.com Dedicated Fast API + Azure Failover Backup
+const PRIMARY_API = 'https://dmc-downloader-api.onrender.com/api/info';
+const BACKUP_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
 
-// Helper to fetch video or audio info from our Azure Playwright API
+// Helper to fetch video or audio info (Render 100% Speed with Azure Failover)
 async function fetchFromAzure(videoUrl, type = 'video') {
-    const res = await axios.get(API_ENDPOINT + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
-        timeout: 90000
+    try {
+        const res = await axios.get(PRIMARY_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+            timeout: 30000
+        });
+        if (res.data && res.data.download_url) return res.data;
+    } catch (primaryErr) {
+        console.warn("Render API busy or waking up, switching to Azure backup engine...", primaryErr.message);
+    }
+    const backupRes = await axios.get(BACKUP_API + '?url=' + encodeURIComponent(videoUrl) + '&type=' + type, {
+        timeout: 60000
     });
-    return res.data;
+    return backupRes.data;
 }
 
 // ----------------------------------------------------
