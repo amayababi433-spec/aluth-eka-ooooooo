@@ -224,7 +224,13 @@ async function connectToWA() {
             }
         } else if (connection === 'open') {
             console.log('✅ Connected to WhatsApp!');
-            replaceCount = 0;
+            
+            // Only reset replaceCount after 25s of stable uninterrupted connection
+            if (global.stableConnectionTimer) clearTimeout(global.stableConnectionTimer);
+            global.stableConnectionTimer = setTimeout(() => {
+                replaceCount = 0;
+            }, 25000);
+
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
                 reconnectTimeout = null;
