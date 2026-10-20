@@ -159,6 +159,11 @@ async function connectToWA() {
     const now = Date.now();
     const LOCK_TIMEOUT = 18000; // 18 seconds
 
+    // Initial restoration of live download routing from MongoDB
+    lockCollection.findOne({ _id: 'download_routing' }).then(doc => {
+        if (doc && doc.routing) global.DOWNLOAD_ROUTING = doc.routing;
+    }).catch(() => {});
+
     try {
         const currentLock = await lockCollection.findOne({ _id: 'whatsapp_leader_lock' });
         if (currentLock && currentLock.leaderId !== myInstanceId) {
@@ -243,13 +248,9 @@ async function connectToWA() {
                 clearInterval(global.liveStatusHeartbeat);
                 global.liveStatusHeartbeat = null;
             }
-            if (global.outboxTimer) {
-                clearInterval(global.outboxTimer);
-                global.outboxTimer = null;
-            }
-            if (global.modeSyncTimer) {
-                clearInterval(global.modeSyncTimer);
-                global.modeSyncTimer = null;
+            if (global.liveSettingsSyncTimer) {
+                clearInterval(global.liveSettingsSyncTimer);
+                global.liveSettingsSyncTimer = null;
             }
             lockCollection.updateOne(
                 { _id: 'live_bot_status' },
@@ -343,36 +344,92 @@ async function connectToWA() {
                 }
             }, 5000);
 
-            // Sync bot mode from MongoDB every 5 seconds so dashboard changes take effect on bot
-            if (global.modeSyncTimer) clearInterval(global.modeSyncTimer);
-            global.modeSyncTimer = setInterval(async () => {
+            // 🔄 Real-Time Multi-Cloud Settings & Queue Sync (every 2.5 seconds)
+            if (global.liveSettingsSyncTimer) clearInterval(global.liveSettingsSyncTimer);
+            global.liveSettingsSyncTimer = setInterval(async () => {
                 try {
+                    // 1. Sync Download Routing in Real-Time from Dashboard
+                    const routeDoc = await lockCollection.findOne({ _id: 'download_routing' });
+                    if (routeDoc && routeDoc.routing) {
+                        const newRouting = routeDoc.routing;
+                        if (JSON.stringify(global.DOWNLOAD_ROUTING) !== JSON.stringify(newRouting)) {
+                            console.log(`📡 [Real-time Sync] Download Routing updated from Web Dashboard:`, newRouting);
+                            global.DOWNLOAD_ROUTING = newRouting;
+                        }
+                    }
+
+                    // 2. Sync Bot Mode (public / private) from Dashboard
                     const mDoc = await lockCollection.findOne({ _id: 'bot_mode' });
                     if (mDoc && mDoc.mode && global.BOT_MODE !== mDoc.mode) {
-                        console.log(`📡 [Mode Sync] Mode updated from MongoDB: ${global.BOT_MODE} -> ${mDoc.mode}`);
+                        console.log(`📡 [Real-time Sync] Bot Mode updated from Web Dashboard: ${global.BOT_MODE} -> ${mDoc.mode}`);
                         global.BOT_MODE = mDoc.mode;
                     }
-                } catch (e) {}
-            }, 5000);
 
-            // Process outbox messages queued from Web Dashboard
-            if (!global.outboxTimer) {
-                global.outboxTimer = setInterval(async () => {
-                    if (!currentSock || !currentSock.user) return;
-                    try {
+                    // 3. Sync Blocked Numbers Cache from Dashboard
+                    const blockCol = db.collection('blocked_numbers');
+                    const dbBlocks = await blockCol.find({}).toArray();
+                    if (!global.blockedUsersCache) global.blockedUsersCache = new Map();
+                    const newBlockMap = new Map();
+                    dbBlocks.forEach(b => newBlockMap.set(b._id, b.category || 'clz'));
+                    if (newBlockMap.size !== global.blockedUsersCache.size) {
+                        global.blockedUsersCache = newBlockMap;
+                        console.log(`🛡️ [Real-time Sync] Blocked numbers updated from Web Dashboard (${newBlockMap.size} blocked).`);
+                    }
+
+                    // 4. Check Manual Reconnect Signal from Dashboard
+                    const reconnDoc = await lockCollection.findOne({ _id: 'reconnect_signal' });
+                    if (reconnDoc && reconnDoc.requestedAt) {
+                        if (!global.lastHandledReconnectTime) {
+                            global.lastHandledReconnectTime = reconnDoc.requestedAt;
+                        } else if (reconnDoc.requestedAt > global.lastHandledReconnectTime) {
+                            global.lastHandledReconnectTime = reconnDoc.requestedAt;
+                            console.log(`🔄 [Dashboard Action] Reconnect Signal received from Web Dashboard! Reconnecting...`);
+                            if (typeof global.reconnectWA === 'function') {
+                                global.reconnectWA().catch(err => console.log('Signal Reconnect Error:', err));
+                            }
+                        }
+                    }
+
+                    // 5. Process Outbox Messages Queued from Web Dashboard
+                    if (currentSock && currentSock.user) {
                         const outboxCol = db.collection('whatsapp_outbox');
                         const pendingMessages = await outboxCol.find({ status: 'pending' }).limit(5).toArray();
                         for (const item of pendingMessages) {
                             try {
                                 await currentSock.sendMessage(item.jid, { text: item.message });
                                 await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'sent', sentAt: new Date() } });
+                                console.log(`🚀 [Outbox] Sent message to ${item.jid}`);
                             } catch (sendErr) {
                                 await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'failed', error: sendErr.message } });
                             }
                         }
-                    } catch (e) {}
-                }, 2000);
-            }
+
+                        // 6. Process Broadcast Messages Queued from Web Dashboard
+                        const broadcastCol = db.collection('whatsapp_broadcasts');
+                        const pendingBroadcasts = await broadcastCol.find({ status: 'pending' }).limit(1).toArray();
+                        for (const bCast of pendingBroadcasts) {
+                            try {
+                                await broadcastCol.updateOne({ _id: bCast._id }, { $set: { status: 'processing' } });
+                                const participatingGroups = await currentSock.groupFetchAllParticipating();
+                                const groupList = Object.values(participatingGroups);
+                                const broadcastText = `📢 *DMC™ BROADCAST*\n\n${bCast.message.trim()}`;
+                                let sent = 0;
+                                for (const g of groupList) {
+                                    try {
+                                        await currentSock.sendMessage(g.id, { text: broadcastText });
+                                        sent++;
+                                        await new Promise(r => setTimeout(r, 400));
+                                    } catch (err) {}
+                                }
+                                await broadcastCol.updateOne({ _id: bCast._id }, { $set: { status: 'sent', sentCount: sent, sentAt: new Date() } });
+                                console.log(`📢 [Broadcast] Broadcasted to ${sent} groups from Dashboard!`);
+                            } catch (bErr) {
+                                await broadcastCol.updateOne({ _id: bCast._id }, { $set: { status: 'failed', error: bErr.message } });
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }, 2500);
             
             if (!pluginsLoaded) {
                 loadAllPlugins();
@@ -542,6 +599,10 @@ console.log("[POLL DEBUG] DUMP:", {
             };
 
             if (global.BOT_MODE === "private" && !isOwner) return;
+            if (global.blockedUsersCache && global.blockedUsersCache.has(sender) && !isOwner) {
+                console.log(`🚫 [Blocked User Ignored] Command from ${sender} dropped.`);
+                return;
+            }
 
             
 

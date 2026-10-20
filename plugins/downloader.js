@@ -12,11 +12,11 @@ const yts = require('yt-search');
 const PRIMARY_AZURE_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
 
 // 2️⃣ Backup Server: Dynamic Cloudflare / Localtunnel Backup URL resolver
-let cachedBackupUrl = 'https://condos-server-conditional-luke.trycloudflare.com/api/info';
+let cachedBackupUrl = 'https://roland-certificates-component-weed.trycloudflare.com/api/info';
 let lastUrlFetchTime = 0;
 
 async function getBackupApiUrl() {
-    if (Date.now() - lastUrlFetchTime < 180000 && cachedBackupUrl) {
+    if (Date.now() - lastUrlFetchTime < 30000 && cachedBackupUrl) {
         return cachedBackupUrl;
     }
     try {
@@ -27,7 +27,7 @@ async function getBackupApiUrl() {
             console.log('📡 [DYNAMIC BACKUP] Resolved live Cloudflare backup URL:', cachedBackupUrl);
         }
     } catch (e) {
-        // fallback to current cachedBackupUrl
+        lastUrlFetchTime = 0; // invalidate on error so next call retries fresh
     }
     return cachedBackupUrl;
 }
@@ -36,6 +36,7 @@ async function getBackupApiUrl() {
 async function fetchMediaWithFailover(videoUrl, type = 'video') {
     const routing = global.DOWNLOAD_ROUTING || { yt: 'auto', all: 'auto' };
     const mode = (routing.all && routing.all !== 'auto') ? routing.all : (routing.yt || 'auto');
+    console.log(`🎯 [YouTube Engine Routing] Mode: ${mode.toUpperCase()} (Full Routing: ${JSON.stringify(routing)})`);
 
     // 1️⃣ Manual Mode: Force Azure Cloud Server Only
     if (mode === 'azure') {

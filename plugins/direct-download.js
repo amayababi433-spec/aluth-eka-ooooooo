@@ -108,11 +108,11 @@ function extractVideoFromHtml(html) {
 const TERABOX_AZURE_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/terabox';
 const DISKWALA_AZURE_ENDPOINT = 'https://copyright-handled-todd-latter.trycloudflare.com/api/diskwala';
 
-let cachedBackupBase = 'https://condos-server-conditional-luke.trycloudflare.com';
+let cachedBackupBase = 'https://roland-certificates-component-weed.trycloudflare.com';
 let lastUrlFetchTime = 0;
 
 async function getBackupBaseUrl() {
-    if (Date.now() - lastUrlFetchTime < 180000 && cachedBackupBase) {
+    if (Date.now() - lastUrlFetchTime < 30000 && cachedBackupBase) {
         return cachedBackupBase;
     }
     try {
@@ -122,7 +122,7 @@ async function getBackupBaseUrl() {
             lastUrlFetchTime = Date.now();
         }
     } catch (e) {
-        // fallback to cachedBackupBase
+        lastUrlFetchTime = 0; // invalidate on error so next call retries fresh
     }
     return cachedBackupBase;
 }
@@ -137,6 +137,7 @@ async function handleTeraBoxDownload(conn, mek, from, targetUrl, reply) {
 
         const routing = global.DOWNLOAD_ROUTING || { terabox: 'auto', all: 'auto' };
         const mode = (routing.all && routing.all !== 'auto') ? routing.all : (routing.terabox || 'auto');
+        console.log(`🎯 [TeraBox Engine Routing] Mode: ${mode.toUpperCase()} (Full Routing: ${JSON.stringify(routing)})`);
 
         if (mode === 'azure') {
             engineUsed = "Azure Core (Manual Mode)";
