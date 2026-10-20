@@ -400,9 +400,38 @@ cmd({
             const epLink = foundEp ? foundEp.link : `https://sinhalasub.lk/episodes/one-piece-s0${targetSeason}e${epStr}/`;
             const oneTapSub = botNum ? createOneTapLink(botNum, `.sub One Piece ${seasonStr}E${epStr}`) : '';
 
+            // Dynamically extract download servers from the episode page
+            let serverLinks = [];
+            try {
+                const epPageRes = await axios.get(epLink, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    timeout: 8000
+                });
+                const $ep = cheerio.load(epPageRes.data);
+                $ep('a').each((i, el) => {
+                    const h = $ep(el).attr('href') || '';
+                    const t = $ep(el).text().trim();
+                    if (h.includes('/links/') && (t.includes('DLServer') || t.includes('Telagram') || t.includes('Telegram') || t.includes('Server') || t.includes('Download') || t.includes('Pixeldrain'))) {
+                        if (!serverLinks.some(s => s.url === h)) {
+                            serverLinks.push({ name: t, url: h });
+                        }
+                    }
+                });
+            } catch (e) {}
+
+            let serversText = "";
+            if (serverLinks.length > 0) {
+                serversText = "📥 *Direct Download Servers:*\n";
+                serverLinks.slice(0, 5).forEach(srv => {
+                    serversText += `• 🚀 *${srv.name}:* ${srv.url}\n`;
+                });
+                serversText += "\n";
+            }
+
             const cardMsg = `👑 *ONE PIECE (NETFLIX LIVE-ACTION)* 👑\n` +
                             `🎬 *${seasonStr}E${epStr} - ${epTitle}*\n` +
                             `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                            serversText +
                             `🔗 *Watch / Download Page:*\n${epLink}\n\n` +
                             (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
                             `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් ක්ෂණිකව මෙම Episode එකේ Sinhala Subtitle ගොනුව (.zip / .srt) WhatsApp එකට ලබා ගත හැක._\n\n` +
