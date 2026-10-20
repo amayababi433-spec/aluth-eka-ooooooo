@@ -428,7 +428,13 @@ console.log("[POLL DEBUG] DUMP:", {
     });
 }
 
-connectToWA().catch(err => console.log('Unexpected Error:', err));
+const isWebOnly = process.env.WEB_ONLY === 'true' || process.env.DISABLE_WHATSAPP === 'true';
+
+if (isWebOnly) {
+    console.log("🌐 [WEB_ONLY Mode]: Running Web Server & Admin Dashboard ONLY. WhatsApp connection is disabled on this instance to prevent session conflict.");
+} else {
+    connectToWA().catch(err => console.log('Unexpected Error:', err));
+}
 
 
 process.on('SIGTERM', () => {
