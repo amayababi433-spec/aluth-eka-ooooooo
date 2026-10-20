@@ -1,10 +1,17 @@
-FROM python:3.11-slim
+FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
+
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends wget gnupg ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
+
+# Install FFmpeg for real-time MP3 streaming
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN python -m playwright install chromium --with-deps
+
 COPY . .
+
 ENV PORT=8080
 EXPOSE 8080
+
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+
