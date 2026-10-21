@@ -21,4 +21,4 @@ COPY . .
 ENV PORT=10000
 EXPOSE 10000
 
-CMD ["node", "index.js"]
+CMD ["node", "--max-old-space-size=384", "--expose-gc", "index.js"]

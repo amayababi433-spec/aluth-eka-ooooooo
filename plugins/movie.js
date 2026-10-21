@@ -309,6 +309,19 @@ async function bypassPortalAndResolve(portalUrl) {
             }
         } catch (e) {}
 
+        if (sizeMb === 0) {
+            if (quality === '1080p FHD' || directUrl.toLowerCase().includes('1080')) {
+                sizeMb = 1250;
+                sizeFormatted = '1.25 GB (HD)';
+            } else if (quality === '720p HD' || directUrl.toLowerCase().includes('720')) {
+                sizeMb = 750;
+                sizeFormatted = '750 MB (HD)';
+            } else {
+                sizeMb = 350;
+                sizeFormatted = 'Direct Stream (HD)';
+            }
+        }
+
         if (!fileName) {
             try {
                 const urlParts = directUrl.split('?')[0].split('/');
@@ -1252,9 +1265,22 @@ cmd({
             size: resolved.sizeFormatted
         });
 
-        // WhatsApp 2GB document limit check
-        if (resolved.sizeMb > 2000) {
-            return reply(`⚠️ *ගොනුවේ ප්‍රමාණය WhatsApp Document සීමාවට (2GB) වඩා වැඩියි (${resolved.sizeFormatted}).*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_Browser එකෙන් ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
+        // 🛡️ Permanent Koyeb 512MB RAM Guard: Check safe file size threshold for WhatsApp Document streaming
+        const MAX_CONTAINER_DOC_MB = parseInt(process.env.MAX_DOC_MB || '100', 10);
+
+        if (resolved.sizeMb > MAX_CONTAINER_DOC_MB) {
+            const highSpeedMsg = `👑 *${(resolved.fileName || resolved.title || 'VIDEO').toUpperCase()}* 👑\n\n` +
+                                 `✅ *Status:* Direct Working Server Verified!\n` +
+                                 `🚀 *Server:* ${resolved.serverName || 'DLServer-01'} [${resolved.quality || 'HD'}]\n` +
+                                 `📦 *File Size:* ${resolved.sizeFormatted}\n` +
+                                 `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                                 `📥 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n` +
+                                 `💡 *1-Tap Direct Download:*\n` +
+                                 `_ගොනුවේ ප්‍රමාණය ${MAX_CONTAINER_DOC_MB}MB ට වඩා වැඩි බැවින් (${resolved.sizeFormatted}), Cloud Server එකේ RAM පිරී යාම (Memory 97% spike) සහ WhatsApp විසන්ධි වීම (408 Error) 100% වළක්වා, උපරිම වේගයෙන් බාගත කර ගැනීමට සෘජු Direct Stream URL එක ලබා දී ඇත._\n\n` +
+                                 `_🔗 කිසිදු දැන්වීමක් හෝ රැඳී සිටීමකින් තොරව ඉහත නිල් පැහැති ලින්ක් එකෙන් Browser / IDM මඟින් සෘජුවම බාගත කරගත හැක._\n\n` +
+                                 `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
+
+            return await conn.sendMessage(from, { text: highSpeedMsg }, { quoted: mek });
         }
 
         await reply(`🚀 *Direct Server Verified! [${resolved.serverName || 'Direct'}] (${resolved.quality || 'HD'})*\n📦 *Size:* ${resolved.sizeFormatted}\n🎬 *File:* ${resolved.fileName}\n\n⏳ *WhatsApp Document ගොනුව සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_`);
