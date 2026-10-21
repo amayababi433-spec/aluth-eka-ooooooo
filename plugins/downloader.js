@@ -7,6 +7,7 @@
 const { cmd } = require('../command');
 const axios = require('axios');
 const yts = require('yt-search');
+const DownloadGuard = require('../lib/downloadGuard');
 
 // 1️⃣ Primary Server: User's Azure Cloud VM (High-Speed Direct Core)
 const PRIMARY_AZURE_API = 'https://copyright-handled-todd-latter.trycloudflare.com/api/info';
@@ -233,33 +234,43 @@ cmd({
     desc: "Download YouTube audio or video with Smart Failover",
     category: "download",
     filename: __filename
-}, async (conn, mek, m, { from, q, reply, prefix, command, body }) => {
-    try {
-        if (mek.key.fromMe) return; // Prevent self-trigger loop
+}, async (conn, mek, m, { from, q, reply, prefix, command, body, sender }) => {
+    if (mek.key.fromMe) return; // Prevent self-trigger loop
 
-        const cmdName = (command || (body && body.startsWith('.') ? body.slice(1).trim().split(' ')[0].toLowerCase() : '')).toLowerCase();
-        const isAudioOnly = (cmdName === 'mp3' || cmdName === 'audio' || cmdName === 'yta' || cmdName === 'ytaudio');
+    const cmdName = (command || (body && body.startsWith('.') ? body.slice(1).trim().split(' ')[0].toLowerCase() : '')).toLowerCase();
+    const isAudioOnly = (cmdName === 'mp3' || cmdName === 'audio' || cmdName === 'yta' || cmdName === 'ytaudio');
 
-        let query = q ? q.trim() : "";
-        if (!query) {
-            // Check if user quoted a video with secret audio code or a YouTube URL
-            const quoted = mek?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            if (quoted) {
-                const quotedCaption = quoted?.videoMessage?.caption || quoted?.extendedTextMessage?.text || quoted?.conversation || "";
-                const secretPayload = decodeInvisible(quotedCaption);
-                if (secretPayload && secretPayload.startsWith("DMC_AUDIO:")) {
-                    query = secretPayload.replace("DMC_AUDIO:", "").trim();
-                } else {
-                    const ytMatch = quotedCaption.match(/(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]+(\S*)?/i);
-                    if (ytMatch) query = ytMatch[0];
-                }
+    let query = q ? q.trim() : "";
+    if (!query) {
+        // Check if user quoted a video with secret audio code or a YouTube URL
+        const quoted = mek?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (quoted) {
+            const quotedCaption = quoted?.videoMessage?.caption || quoted?.extendedTextMessage?.text || quoted?.conversation || "";
+            const secretPayload = decodeInvisible(quotedCaption);
+            if (secretPayload && secretPayload.startsWith("DMC_AUDIO:")) {
+                query = secretPayload.replace("DMC_AUDIO:", "").trim();
+            } else {
+                const ytMatch = quotedCaption.match(/(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]+(\S*)?/i);
+                if (ytMatch) query = ytMatch[0];
             }
         }
+    }
 
-        if (!query) {
-            return reply("⚠️ *කරුණාකර නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*." + (cmdName || 'video') + " bowitiya mal*\n*." + (cmdName || 'video') + " https://youtu.be/...*");
-        }
+    if (!query) {
+        return reply("⚠️ *කරුණාකර නමක් හෝ YouTube ලින්ක් එකක් ලබා දෙන්න!*\n\nඋදාහරණ:\n*." + (cmdName || 'video') + " bowitiya mal*\n*." + (cmdName || 'video') + " https://youtu.be/...*");
+    }
 
+    // 🛡️ Anti-Crash & Anti-Ban Guard: Check exclusive lock before executing
+    const lock = DownloadGuard.acquireLock(from, sender, {
+        title: query,
+        type: isAudioOnly ? 'YouTube MP3 Audio' : 'YouTube Video'
+    });
+
+    if (!lock.allowed) {
+        return reply(lock.message);
+    }
+
+    try {
         await reply(isAudioOnly ? "⏳ *Audio සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*" : "⏳ *සොයමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
         let targetUrl = query;
@@ -285,6 +296,12 @@ cmd({
 
         const cleanTitle = (data.title && data.title !== "- YouTube" && data.title !== "YouTube") ? data.title : (searchTitle || (isAudioOnly ? "Audio Track" : "Video"));
         const engineLabel = data.engineUsed || "Primary Azure Core";
+
+        // Update active task title
+        DownloadGuard.updateTask(from, { title: cleanTitle });
+
+        // Simulate natural human presence before sending media
+        await DownloadGuard.simulatePresenceSafely(conn, from, isAudioOnly ? 'audio' : 'video');
 
         if (isAudioOnly) {
             await sendMediaSafely(conn, from, {
@@ -355,6 +372,9 @@ cmd({
             console.error("Emergency Fallback failed:", emErr.message);
         }
         reply("❌ *YouTube වෙතින් Download කිරීමට නොහැකි විය. (සර්වර් කාර්යබහුලයි, කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න)*");
+    } finally {
+        // 🛡️ 1000% GUARANTEE: Lock is ALWAYS released
+        DownloadGuard.releaseLock(from, true);
     }
 });
 
@@ -374,23 +394,37 @@ cmd({
             if (secretPayload && secretPayload.startsWith("DMC_AUDIO:")) {
                 const targetUrl = secretPayload.replace("DMC_AUDIO:", "").trim();
 
-                await reply("⏳ *MP3 Audio එක සකසමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
-
-                const audioData = await fetchMediaWithFailover(targetUrl, 'audio');
-                if (!audioData || !audioData.download_url) {
-                    return reply("❌ *Audio Stream එක ලබා ගැනීමට නොහැකි විය.*");
+                const lock = DownloadGuard.acquireLock(from, mek?.key?.participant || from, {
+                    title: "Swipe-to-MP3 Audio",
+                    type: "YouTube MP3 Audio"
+                });
+                if (!lock.allowed) {
+                    return reply(lock.message);
                 }
 
-                const audioTitle = (audioData.title && audioData.title !== "- YouTube" && audioData.title !== "YouTube") ? audioData.title : "Audio Track";
+                try {
+                    await reply("⏳ *MP3 Audio එක සකසමින් පවතී... කරුණාකර රැඳී සිටින්න.*");
 
-                await conn.sendMessage(from, {
-                    audio: { url: audioData.download_url },
-                    mimetype: 'audio/mpeg',
-                    fileName: audioTitle + '.mp3',
-                    ptt: false
-                }, { quoted: mek });
+                    const audioData = await fetchMediaWithFailover(targetUrl, 'audio');
+                    if (!audioData || !audioData.download_url) {
+                        return reply("❌ *Audio Stream එක ලබා ගැනීමට නොහැකි විය.*");
+                    }
 
-                return; // Handled swipe-to-mp3
+                    const audioTitle = (audioData.title && audioData.title !== "- YouTube" && audioData.title !== "YouTube") ? audioData.title : "Audio Track";
+                    DownloadGuard.updateTask(from, { title: audioTitle });
+                    await DownloadGuard.simulatePresenceSafely(conn, from, 'audio');
+
+                    await conn.sendMessage(from, {
+                        audio: { url: audioData.download_url },
+                        mimetype: 'audio/mpeg',
+                        fileName: audioTitle + '.mp3',
+                        ptt: false
+                    }, { quoted: mek });
+
+                    return; // Handled swipe-to-mp3
+                } finally {
+                    DownloadGuard.releaseLock(from, true);
+                }
             }
         }
 
@@ -403,59 +437,76 @@ cmd({
         // Ignore if user typed a command like .video http://...
         if (trimmed.startsWith('.') || trimmed.startsWith('!') || trimmed.startsWith('/')) return;
 
-        await reply("⏳ *YouTube ලින්ක් එක හඳුනාගන්නා ලදී. Download වෙමින් පවතී...*");
-
-        const data = await fetchMediaWithFailover(trimmed, 'video');
-        if (!data || !data.download_url) {
-            return reply("❌ *Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
+        const lock = DownloadGuard.acquireLock(from, mek?.key?.participant || from, {
+            title: trimmed,
+            type: "YouTube Video"
+        });
+        if (!lock.allowed) {
+            return reply(lock.message);
         }
 
-        const title = data.title || "YouTube Video";
-        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
-        const secretCode = encodeInvisible("DMC_AUDIO:" + trimmed);
-        const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
-        const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
-        const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20${encodeURIComponent(title)}` : '';
-        const engineLabel = data.engineUsed || "Primary Azure Core";
-
-        const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
-        const sizeMb = data.size_bytes ? (data.size_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
-        const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : "";
-
-        if (isLargeFile) {
-            await sendMediaSafely(conn, from, {
-                document: { url: data.download_url },
-                mimetype: 'video/mp4',
-                fileName: title + '.mp4',
-                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt + oneTapSub
-            }, { quoted: mek });
-        } else {
-            await sendMediaSafely(conn, from, {
-                video: { url: data.download_url },
-                caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt + oneTapSub
-            }, { quoted: mek });
-        }
-
-    } catch (err) {
-        console.error("Auto YouTube / Swipe error:", err.message);
-        // 🛡️ Emergency Fallback: If media link failed to fetch, send directly via Master Cloud Guard
         try {
-            console.log("🌐 [Auto YouTube Fallback] Stream send failed, attempting direct Master Cloud Guard send...");
-            const thirdRes = await axios.get(`https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(trimmed)}`, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                timeout: 15000
-            });
-            if (thirdRes.data && thirdRes.data.success && thirdRes.data.result?.download_url) {
-                const emUrl = thirdRes.data.result.download_url;
-                const emTitle = thirdRes.data.result.title || "YouTube Video";
-                return await conn.sendMessage(from, {
-                    video: { url: emUrl },
-                    caption: "👑 *" + emTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ (Master Cloud Guard)_"
+            await reply("⏳ *YouTube ලින්ක් එක හඳුනාගන්නා ලදී. Download වෙමින් පවතී...*");
+
+            const data = await fetchMediaWithFailover(trimmed, 'video');
+            if (!data || !data.download_url) {
+                return reply("❌ *Stream Link එක ලබා ගැනීමට නොහැකි විය.*");
+            }
+
+            const title = data.title || "YouTube Video";
+            DownloadGuard.updateTask(from, { title });
+            await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
+
+            const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+            const secretCode = encodeInvisible("DMC_AUDIO:" + trimmed);
+            const swipePrompt = "\n\n╰┈➤ ⏩ 🎵 *MP3 Audio සඳහා මේ මැසේජ් එක දකුණට Swipe කරන්න*" + secretCode;
+            const oneTapPrompt = botNum ? `\n╰┈➤ 👆 🎵 *1-Tap MP3 Link:* https://wa.me/${botNum}?text=.mp3%20${encodeURIComponent(trimmed)}` : '';
+            const oneTapSub = botNum ? `\n╰┈➤ 👆 🇸🇮 *1-Tap Subtitle Link:* https://wa.me/${botNum}?text=.sub%20${encodeURIComponent(title)}` : '';
+            const engineLabel = data.engineUsed || "Primary Azure Core";
+
+            const isLargeFile = data.size_bytes && data.size_bytes > 55 * 1024 * 1024;
+            const sizeMb = data.size_bytes ? (data.size_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
+            const sizeTag = sizeMb ? `\n📦 *File Size:* ${sizeMb}` : "";
+
+            if (isLargeFile) {
+                await sendMediaSafely(conn, from, {
+                    document: { url: data.download_url },
+                    mimetype: 'video/mp4',
+                    fileName: title + '.mp4',
+                    caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (Unlimited HD Engine)_" + swipePrompt + oneTapPrompt + oneTapSub
+                }, { quoted: mek });
+            } else {
+                await sendMediaSafely(conn, from, {
+                    video: { url: data.download_url },
+                    caption: "👑 *" + title + "* 👑" + sizeTag + "\n\n_Downloaded via ＤＭＣ™ (" + engineLabel + ")_" + swipePrompt + oneTapPrompt + oneTapSub
                 }, { quoted: mek });
             }
-        } catch (emErr) {
-            console.error("Auto YouTube Emergency Fallback failed:", emErr.message);
+
+        } catch (err) {
+            console.error("Auto YouTube / Swipe error:", err.message);
+            // 🛡️ Emergency Fallback: If media link failed to fetch, send directly via Master Cloud Guard
+            try {
+                console.log("🌐 [Auto YouTube Fallback] Stream send failed, attempting direct Master Cloud Guard send...");
+                const thirdRes = await axios.get(`https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(trimmed)}`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    timeout: 15000
+                });
+                if (thirdRes.data && thirdRes.data.success && thirdRes.data.result?.download_url) {
+                    const emUrl = thirdRes.data.result.download_url;
+                    const emTitle = thirdRes.data.result.title || "YouTube Video";
+                    return await conn.sendMessage(from, {
+                        video: { url: emUrl },
+                        caption: "👑 *" + emTitle + "* 👑\n\n_Downloaded via ＤＭＣ™ (Master Cloud Guard)_"
+                    }, { quoted: mek });
+                }
+            } catch (emErr) {
+                console.error("Auto YouTube Emergency Fallback failed:", emErr.message);
+            }
+        } finally {
+            DownloadGuard.releaseLock(from, true);
         }
+    } catch (outerErr) {
+        console.error("Auto YouTube / Swipe Outer Error:", outerErr.message);
     }
 });
 

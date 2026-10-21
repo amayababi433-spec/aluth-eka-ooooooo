@@ -14,6 +14,7 @@ const { cmd } = require('../command');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const yts = require('yt-search');
+const DownloadGuard = require('../lib/downloadGuard');
 
 // Session store for interactive menu selections
 if (!global.movieSessions) global.movieSessions = {};
@@ -970,20 +971,34 @@ cmd({
     desc: "Auto-Verify Secure Download Portal & Send Video Document to WhatsApp",
     category: "download",
     filename: __filename
-}, async (conn, mek, m, { from, q, reply }) => {
+}, async (conn, mek, m, { from, q, reply, sender }) => {
+    // 🛡️ 1. Anti-Crash & Anti-Ban Guard: Check exclusive lock before executing
+    const lock = DownloadGuard.acquireLock(from, sender, {
+        title: "බාගත කිරීම සූදානම් වෙමින් පවතී...",
+        type: "Movie / Episode Document (Direct Stream)",
+        url: q || ""
+    });
+
+    if (!lock.allowed) {
+        return reply(lock.message);
+    }
+
     try {
         if (!q) {
+            DownloadGuard.releaseLock(from, false);
             return reply("🎬 *භාවිතය:* `.dlep <Portal_URL>`\n\nඋදාහරණ:\n*.dlep https://sinhalasub.lk/links/wupim2somd/*");
         }
 
         const urlMatch = q.match(/https?:\/\/[^\s]+/i);
         if (!urlMatch) {
+            DownloadGuard.releaseLock(from, false);
             return reply("❌ *වලංගු බාගත කිරීමේ Link එකක් හමු නොවීය!*");
         }
 
         const targetUrl = urlMatch[0];
 
-        await conn.sendPresenceUpdate('composing', from);
+        // Anti-Ban Human Presence Simulation
+        await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
         await reply("⚡ *Auto Mind: Secure Portal එක Auto-Verify කරමින් පවතී...*\n_No Ads • No 3-Step Waiting • Direct Stream Extracting..._");
 
         const resolved = await bypassPortalAndResolve(targetUrl);
@@ -991,12 +1006,21 @@ cmd({
             return reply(`❌ *Portal එක Auto-Verify කිරීමට නොහැකි විය: ${resolved.error || 'Direct stream link not found'}*`);
         }
 
+        // Update active task title in DownloadGuard
+        DownloadGuard.updateTask(from, {
+            title: resolved.fileName || targetUrl,
+            size: resolved.sizeFormatted
+        });
+
         // WhatsApp 2GB document limit check
         if (resolved.sizeMb > 2000) {
             return reply(`⚠️ *ගොනුවේ ප්‍රමාණය WhatsApp Document සීමාවට (2GB) වඩා වැඩියි (${resolved.sizeFormatted}).*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_Browser එකෙන් ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
         }
 
         await reply(`🚀 *Portal Verified! (${resolved.quality || 'HD'})*\n📦 *Size:* ${resolved.sizeFormatted}\n🎬 *File:* ${resolved.fileName}\n\n⏳ *WhatsApp Document ගොනුව (Image 3 ආකාරයට) සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_`);
+
+        // Anti-Ban human presence simulation
+        await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
 
         try {
             await conn.sendMessage(from, {
@@ -1017,7 +1041,26 @@ cmd({
     } catch (err) {
         console.error("DLEP Command Error:", err.message);
         reply(`❌ *වීඩියෝව එවීමේදී දෝෂයක් සිදු විය: ${err.message}*`);
+    } finally {
+        // 🛡️ 1000% GUARANTEE: Lock is ALWAYS released and Anti-Ban cooldown is set
+        DownloadGuard.releaseLock(from, true);
     }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 5.6 COMMAND: .cleardl / .resetdl (Owner Force Unlock)
+// ─────────────────────────────────────────────────────────────
+cmd({
+    pattern: "cleardl",
+    alias: ["resetdl", "unlockdl"],
+    react: "🛡️",
+    desc: "Reset/Clear active download locks (Owner Only)",
+    category: "owner",
+    filename: __filename
+}, async (conn, mek, m, { from, isOwner, reply }) => {
+    if (!isOwner) return reply("⛔ *මෙම විධානය Owner සඳහා පමණි.*");
+    const res = DownloadGuard.forceRelease();
+    reply(`${res}\n_🛡️ Download Guard & Anti-Ban Locks are now 100% refreshed._`);
 });
 
 // ─────────────────────────────────────────────────────────────

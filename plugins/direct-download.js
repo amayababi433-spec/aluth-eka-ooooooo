@@ -10,6 +10,7 @@
 
 const { cmd } = require('../command');
 const axios = require('axios');
+const DownloadGuard = require('../lib/downloadGuard');
 
 // Supported direct video extensions in URL
 const VIDEO_EXT_REGEX = /\.(mp4|mov|webm|mkv|avi|m4v)(\?.*)?$/i;
@@ -321,7 +322,16 @@ async function handleDiskwalaDownload(conn, mek, from, targetUrl, reply) {
 
 // Reusable download and stream handler
 async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
-    let targetUrl = rawUrl.trim();
+    const lock = DownloadGuard.acquireLock(from, mek?.key?.participant || from, {
+        title: rawUrl.slice(0, 40),
+        type: "Direct Web Video / Stream"
+    });
+    if (!lock.allowed) {
+        return reply(lock.message);
+    }
+
+    try {
+        let targetUrl = rawUrl.trim();
 
     // 0. Check for TeraBox links
     const isTeraBox = /terabox(app)?\.com|1024terabox\.com|teraboxshare\.com|nephobox\.com|4funbox\.com|mirrobox\.com|1024tera\.com/i.test(targetUrl);
@@ -494,6 +504,12 @@ async function handleDirectDownload(conn, mek, from, rawUrl, reply) {
     } catch (sendErr) {
         console.error("Direct Video Send Error:", sendErr.message);
         reply("❌ *වීඩියෝව එවීමේදී WhatsApp දෝෂයක් සිදු විය. කරුණාකර නැවත උත්සාහ කරන්න.*");
+    }
+    } catch (err) {
+        console.error("handleDirectDownload Error:", err.message);
+        reply("❌ *බාගත කිරීමේදී දෝෂයක් සිදු විය: " + err.message + "*");
+    } finally {
+        DownloadGuard.releaseLock(from, true);
     }
 }
 

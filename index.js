@@ -1,5 +1,9 @@
 require('dotenv').config();
 
+// 🛡️ 1000% ZERO-CRASH & ANTI-BAN PROCESS IMMUNITY
+const DownloadGuard = require('./lib/downloadGuard');
+DownloadGuard.installProcessCrashGuard();
+
 global.blockedUsersCache = new Map();
 const express = require('express');
 const axios = require('axios');
@@ -609,7 +613,14 @@ console.log("[POLL DEBUG] DUMP:", {
             if (isCmd) {
                 const cmd = commands.find((c) => c.pattern === command || (c.alias && c.alias.includes(command)));
                 if (cmd) {
-                    await cmd.function(sock, mek, m, { from, q, reply, args, isOwner, isGroup, body, sender, command });
+                    try {
+                        await cmd.function(sock, mek, m, { from, q, reply, args, isOwner, isGroup, body, sender, command });
+                    } catch (cmdErr) {
+                        console.error(`❌ [Command Error: .${command}]:`, cmdErr?.message || cmdErr);
+                        try {
+                            reply(`❌ *විධානය ක්‍රියාත්මක කිරීමේදී දෝෂයක් සිදු විය: ${cmdErr?.message || 'අඥාත දෝෂයක්'}*`);
+                        } catch (e) {}
+                    }
                 }
             }
 

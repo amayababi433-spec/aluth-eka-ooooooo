@@ -15,6 +15,7 @@ const { cmd } = require('../command');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const qs = require('qs');
+const DownloadGuard = require('../lib/downloadGuard');
 
 // In-memory cache for pending user selections (Key: jid/sender)
 const pendingTikTok = new Map();
@@ -309,6 +310,14 @@ async function sendChosenFormat(conn, from, mek, session, formatType, sourceUrl)
  * Direct Download Runner for .tthd, .ttmp4, .ttmp3
  */
 async function handleDirectDownload(conn, mek, from, rawInput, formatType, reply) {
+    const lock = DownloadGuard.acquireLock(from, mek?.key?.participant || from, {
+        title: (rawInput || "TikTok Video").slice(0, 40),
+        type: `TikTok ${formatType.toUpperCase()}`
+    });
+    if (!lock.allowed) {
+        return reply(lock.message);
+    }
+
     try {
         let input = (rawInput || "").trim();
         if (!input) {
@@ -338,10 +347,15 @@ async function handleDirectDownload(conn, mek, from, rawInput, formatType, reply
             sourceUrl: validUrl
         };
 
+        DownloadGuard.updateTask(from, { title: session.title });
+        await DownloadGuard.simulatePresenceSafely(conn, from, formatType === 'audio' ? 'audio' : 'video');
+
         await sendChosenFormat(conn, from, mek, session, formatType, validUrl);
     } catch (err) {
         console.error("[DIRECT TIKTOK DOWNLOAD ERROR]:", err.message);
         reply("❌ *Download කිරීමේදී දෝෂයක් ඇති විය.*");
+    } finally {
+        DownloadGuard.releaseLock(from, true);
     }
 }
 
