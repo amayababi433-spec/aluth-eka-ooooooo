@@ -15,6 +15,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const yts = require('yt-search');
 const DownloadGuard = require('../lib/downloadGuard');
+const { fetchMediaWithFailover } = require('./downloader');
 
 // Session store for interactive menu selections
 if (!global.movieSessions) global.movieSessions = {};
@@ -49,6 +50,30 @@ function sanitizeSearchQuery(raw) {
         .trim();
 }
 
+// Helper: Google Suggest Real-time Typo-Correction & Query Expansion
+async function getSearchEngineSuggestions(query) {
+    const list = [query];
+    try {
+        const urls = [
+            `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(query + ' movie')}`,
+            `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(query)}`
+        ];
+        for (const u of urls) {
+            const res = await axios.get(u, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 });
+            if (res.data && Array.isArray(res.data[1])) {
+                res.data[1].forEach(s => {
+                    const clean = s.replace(/\bmovie\b/gi, '').replace(/\bfilm\b/gi, '').trim();
+                    if (clean.length >= 2 && !list.includes(clean)) {
+                        list.push(clean);
+                    }
+                });
+            }
+            if (list.length >= 5) break;
+        }
+    } catch (e) {}
+    return list;
+}
+
 // ─────────────────────────────────────────────────────────────
 // 1. SINHALA SUBTITLE EXTRACTOR (Baiscope Live Redeem Engine)
 // ─────────────────────────────────────────────────────────────
@@ -69,42 +94,32 @@ async function fetchSinhalaSubtitle(query) {
             .replace(/ep\d+/gi, '')
             .trim() || sanitizeSearchQuery(query);
 
-        let searchUrl = `https://www.baiscope.lk/search?q=${encodeURIComponent(query)}`;
-        let searchRes = await axios.get(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            },
-            timeout: 12000
-        });
+        const suggestions = await getSearchEngineSuggestions(baseTitle || cleanQuery);
+        const searchTerms = [...new Set([query, baseTitle, ...suggestions])].filter(Boolean);
 
-        let $ = cheerio.load(searchRes.data);
         let posts = [];
-        $('article').each((i, el) => {
-            const link = $(el).find('a').attr('href');
-            const title = $(el).find('a').text().trim().replace(/\s+/g, ' ');
-            if (link && title && i < 6) {
-                const fullUrl = link.startsWith('http') ? link : `https://www.baiscope.lk${link}`;
-                posts.push({ title, url: fullUrl });
-            }
-        });
-
-        // If 0 articles, retry with sanitized baseTitle
-        if (posts.length === 0 && baseTitle && baseTitle.toLowerCase() !== query.toLowerCase()) {
+        for (const st of searchTerms.slice(0, 3)) {
             try {
-                const r2 = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(baseTitle)}`, {
-                    headers: { 'User-Agent': 'Mozilla/5.0' },
-                    timeout: 10000
+                const searchRes = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(st)}`, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    },
+                    timeout: 8000
                 });
-                $ = cheerio.load(r2.data);
+
+                const $ = cheerio.load(searchRes.data);
                 $('article').each((i, el) => {
                     const link = $(el).find('a').attr('href');
                     const title = $(el).find('a').text().trim().replace(/\s+/g, ' ');
-                    if (link && title && i < 6) {
+                    if (link && title && posts.length < 8) {
                         const fullUrl = link.startsWith('http') ? link : `https://www.baiscope.lk${link}`;
-                        posts.push({ title, url: fullUrl });
+                        if (!posts.some(p => p.url === fullUrl)) {
+                            posts.push({ title, url: fullUrl });
+                        }
                     }
                 });
+                if (posts.length > 0) break;
             } catch (e) {}
         }
 
@@ -454,10 +469,11 @@ async function autoPickWorkingServer(servers) {
 }
 
 async function findWorkingMovieDirectServer(movieQuery) {
+    const suggestions = await getSearchEngineSuggestions(movieQuery);
     const cleanQ = sanitizeSearchQuery(movieQuery) || movieQuery;
-    const searchTerms = [movieQuery, cleanQ].filter((x, i, a) => x && a.indexOf(x) === i);
+    const searchTerms = [...new Set([movieQuery, cleanQ, ...suggestions])].filter(Boolean);
 
-    for (const term of searchTerms) {
+    for (const term of searchTerms.slice(0, 4)) {
         try {
             const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(term)}`;
             const searchRes = await axios.get(searchUrl, {
@@ -495,6 +511,29 @@ async function findWorkingMovieDirectServer(movieQuery) {
             }
         } catch (e) {}
     }
+
+    // Fallback: Check YouTube Cinema TG Cloud Engine
+    try {
+        const ytResults = await searchYouTubeCinema(movieQuery);
+        if (ytResults && ytResults.length > 0) {
+            const bestYt = ytResults[0];
+            const ytData = await fetchMediaWithFailover(bestYt.link, 'video');
+            if (ytData && ytData.download_url) {
+                return {
+                    success: true,
+                    title: ytData.title || bestYt.title,
+                    fileName: (ytData.title || bestYt.title).replace(/[^\w\s-]/gi, '') + '.mp4',
+                    directUrl: ytData.download_url,
+                    sizeMb: parseFloat(ytData.filesize_mb) || 0,
+                    sizeFormatted: ytData.filesize_mb ? `${ytData.filesize_mb} MB` : 'HD Stream',
+                    quality: ytData.quality || '1080p / 720p HD',
+                    serverName: ytData.engineUsed || 'TG Cloud Cinema Engine',
+                    contentType: 'video/mp4'
+                };
+            }
+        }
+    } catch (ytErr) {}
+
     return null;
 }
 
@@ -781,33 +820,29 @@ async function getBaiscopeLiveSeries(cleanQuery, filterSeason = null) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 3. MOVIE SCRAPERS (Sinhalasub, Cinesubz, Baiscope)
+// 3. UNIVERSAL MULTI-ENGINE MOVIE SCRAPERS
 // ─────────────────────────────────────────────────────────────
-async function searchMoviesMulti(query) {
-    let results = [];
-
-    // Search Sinhalasub first (Real Movies and TV Shows only, strictly ignoring navbars)
+async function searchSinhalasub(term) {
+    const items = [];
     try {
-        const res = await axios.get(`https://sinhalasub.lk/?s=${encodeURIComponent(query)}`, {
+        const res = await axios.get(`https://sinhalasub.lk/?s=${encodeURIComponent(term)}`, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000
+            timeout: 7000
         });
         const $ = cheerio.load(res.data);
         $('a').each((i, el) => {
             const h = $(el).attr('href') || '';
             const isMovie = h.match(/\/movies\/([^\/]+)\/?$/i);
             const isTv = h.match(/\/tvshows\/([^\/]+)\/?$/i);
-
             if (isMovie || isTv) {
                 const slug = (isMovie ? isMovie[1] : isTv[1]).toLowerCase();
-                // Strictly exclude header navbar links & categories
                 if (!['movies', 'tvshows', 'language', 'genre', 'year', 'quality'].includes(slug)) {
-                    const rawTitle = $(el).attr('title') || $(el).find('img').attr('alt') || $(el).text().trim();
-                    const clean = cleanTitleForDisplay(rawTitle);
-                    if (clean && clean.length > 2 && !results.some(r => r.link === h) && results.length < 6) {
-                        results.push({
+                    const raw = $(el).attr('title') || $(el).find('img').attr('alt') || $(el).text().trim();
+                    const clean = cleanTitleForDisplay(raw);
+                    if (clean && clean.length > 2 && !items.some(x => x.link === h)) {
+                        items.push({
                             title: clean,
-                            rawTitle: rawTitle,
+                            rawTitle: raw,
                             type: isMovie ? 'Movie' : 'TV Series',
                             link: h,
                             source: 'Sinhalasub.lk'
@@ -817,32 +852,123 @@ async function searchMoviesMulti(query) {
             }
         });
     } catch (e) {}
+    return items;
+}
 
-    // Search Baiscope using modern endpoint
+async function searchBaiscope(term) {
+    const items = [];
     try {
-        const res = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(query)}`, {
+        const res = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(term)}`, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000
+            timeout: 7000
         });
         const $ = cheerio.load(res.data);
         $('article').each((i, el) => {
-            if (results.length < 8) {
-                const title = $(el).find('a').text().trim().replace(/\s+/g, ' ');
-                const link = $(el).find('a').attr('href');
-                if (title && link && !results.some(r => r.link === link)) {
-                    results.push({
-                        title: cleanTitleForDisplay(title),
-                        rawTitle: title,
-                        type: title.toLowerCase().includes('season') || title.toLowerCase().includes('episode') ? 'TV Series' : 'Movie',
-                        link: link.startsWith('http') ? link : `https://www.baiscope.lk${link}`,
-                        source: 'Baiscope.lk'
-                    });
+            const t = $(el).find('a').text().trim().replace(/\s+/g, ' ');
+            const h = $(el).find('a').attr('href');
+            if (t && h && !items.some(x => x.link === h)) {
+                items.push({
+                    title: cleanTitleForDisplay(t),
+                    rawTitle: t,
+                    type: t.toLowerCase().includes('season') || t.toLowerCase().includes('episode') ? 'TV Series' : 'Movie',
+                    link: h.startsWith('http') ? h : `https://www.baiscope.lk${h}`,
+                    source: 'Baiscope.lk'
+                });
+            }
+        });
+    } catch (e) {}
+    return items;
+}
+
+async function searchCinesubz(term) {
+    const items = [];
+    try {
+        const res = await axios.get(`https://cinesubz.co/?s=${encodeURIComponent(term)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 7000
+        });
+        const $ = cheerio.load(res.data);
+        $('a').each((i, el) => {
+            const h = $(el).attr('href') || '';
+            const isMovie = h.match(/\/movies\/([^\/]+)\/?$/i);
+            const isTv = h.match(/\/tvshows\/([^\/]+)\/?$/i);
+            if (isMovie || isTv) {
+                const slug = (isMovie ? isMovie[1] : isTv[1]).toLowerCase();
+                if (!['movies', 'tvshows', 'language', 'genre', 'year', 'quality'].includes(slug)) {
+                    const raw = $(el).attr('title') || $(el).find('img').attr('alt') || $(el).text().trim();
+                    const clean = cleanTitleForDisplay(raw);
+                    if (clean && clean.length > 2 && !items.some(x => x.link === h)) {
+                        items.push({
+                            title: clean,
+                            rawTitle: raw,
+                            type: isMovie ? 'Movie' : 'TV Series',
+                            link: h,
+                            source: 'Cinesubz.co'
+                        });
+                    }
                 }
             }
         });
     } catch (e) {}
+    return items;
+}
 
-    return results;
+async function searchYouTubeCinema(query) {
+    const items = [];
+    try {
+        const searchTerms = [`${query} full movie`, `${query} movie`, query];
+        for (const st of searchTerms) {
+            const res = await yts(st);
+            if (res && res.videos) {
+                for (const v of res.videos) {
+                    if (v.seconds >= 2400 || (v.seconds >= 1200 && (v.title.toLowerCase().includes('movie') || v.title.toLowerCase().includes('film')))) {
+                        items.push({
+                            title: v.title,
+                            cleanTitle: cleanTitleForDisplay(v.title),
+                            duration: v.timestamp,
+                            type: 'Movie (Full HD)',
+                            link: v.url,
+                            source: 'YouTube Cinema (TG Cloud)',
+                            isYouTube: true
+                        });
+                        if (items.length >= 4) break;
+                    }
+                }
+                if (items.length > 0) break;
+            }
+        }
+    } catch (e) {}
+    return items;
+}
+
+async function searchMoviesMulti(query) {
+    const terms = await getSearchEngineSuggestions(query);
+    let allResults = [];
+
+    // 1. Search local platforms (Sinhalasub, Baiscope, Cinesubz) across typo-corrected terms
+    for (const term of terms.slice(0, 3)) {
+        const [sin, bai, cin] = await Promise.all([
+            searchSinhalasub(term),
+            searchBaiscope(term),
+            searchCinesubz(term)
+        ]);
+
+        [...sin, ...bai, ...cin].forEach(item => {
+            if (!allResults.some(r => r.title.toLowerCase() === item.title.toLowerCase() || (item.link && r.link === item.link))) {
+                allResults.push(item);
+            }
+        });
+
+        if (allResults.length >= 6) break;
+    }
+
+    // 2. Global Cinema Engine Fallback: If local subtitle sites return 0 results
+    if (allResults.length === 0) {
+        const ytResults = await searchYouTubeCinema(query);
+        allResults = ytResults;
+    }
+
+    return allResults;
 }
 
 // Helper: YouTube Video Downloader for Shorts/Clips
@@ -1215,11 +1341,32 @@ cmd({
         let resolved = null;
 
         if (urlMatch) {
-            // Mode A: Direct portal URL
             const targetUrl = urlMatch[0];
-            await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
-            await reply("⚡ *Auto Mind: Secure Portal එක Auto-Verify කරමින් පවතී...*\n_No Ads • No 3-Step Waiting • Direct Stream Extracting..._");
-            resolved = await bypassPortalAndResolve(targetUrl);
+            if (targetUrl.includes('youtube.com') || targetUrl.includes('youtu.be')) {
+                await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
+                await reply("⚡ *Auto Mind: YouTube Cinema Cloud Stream සකසමින් පවතී...*\n_Direct 1080p/720p HD Stream Extracting..._");
+                const ytData = await fetchMediaWithFailover(targetUrl, 'video');
+                if (ytData && ytData.download_url) {
+                    resolved = {
+                        success: true,
+                        title: ytData.title || 'Movie',
+                        fileName: (ytData.title || 'Movie').replace(/[^\w\s-]/gi, '') + '.mp4',
+                        directUrl: ytData.download_url,
+                        sizeMb: parseFloat(ytData.filesize_mb) || 0,
+                        sizeFormatted: ytData.filesize_mb ? `${ytData.filesize_mb} MB` : 'HD Stream',
+                        quality: ytData.quality || '1080p / 720p HD',
+                        serverName: ytData.engineUsed || 'TG Cloud Cinema Engine',
+                        contentType: 'video/mp4'
+                    };
+                } else {
+                    resolved = { success: false, error: 'Could not resolve cinema stream' };
+                }
+            } else {
+                // Mode A: Direct portal URL
+                await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
+                await reply("⚡ *Auto Mind: Secure Portal එක Auto-Verify කරමින් පවතී...*\n_No Ads • No 3-Step Waiting • Direct Stream Extracting..._");
+                resolved = await bypassPortalAndResolve(targetUrl);
+            }
         } else {
             // Mode B / C: Text query (Movie or Episode)
             await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
@@ -1417,12 +1564,18 @@ cmd({
 
         results.slice(0, 5).forEach((item, idx) => {
             const isSeries = item.type === 'TV Series';
+            const isYouTube = item.isYouTube || (item.link && (item.link.includes('youtube.com') || item.link.includes('youtu.be')));
             const icon = isSeries ? '📺' : '🎥';
-            const typeLabel = isSeries ? '[TV Series]' : '[Movie]';
+            const typeLabel = isSeries ? '[TV Series]' : (isYouTube ? '[Full HD Movie]' : '[Movie]');
 
             // 1-Tap Links
             let tapDl = '';
-            if (isSeries) {
+            if (isYouTube) {
+                const tapVideo = botNum ? createOneTapLink(botNum, `.dlfilm ${item.link}`) : '';
+                const tapMp3 = botNum ? createOneTapLink(botNum, `.mp3 ${item.link}`) : '';
+                tapDl = (tapVideo ? `👉 📥 *1-Tap Download Video (HD):* ${tapVideo}\n` : '') +
+                        (tapMp3 ? `👉 🎵 *1-Tap MP3 Audio:* ${tapMp3}\n` : '');
+            } else if (isSeries) {
                 const tapSeries = botNum ? createOneTapLink(botNum, `.series ${item.title}`) : '';
                 const tapEp1 = botNum ? createOneTapLink(botNum, `.epdl ${item.title} 1 1`) : '';
                 tapDl = (tapSeries ? `👉 📥 *1-Tap All Episodes:* ${tapSeries}\n` : '') +
@@ -1432,10 +1585,11 @@ cmd({
                 tapDl = tapMovie ? `👉 📥 *1-Tap Download:* ${tapMovie}\n` : '';
             }
 
-            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${item.title}`) : '';
+            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${item.cleanTitle || item.title}`) : '';
 
             menuText += `*${idx + 1}.* ${icon} *${item.title}* ${typeLabel}\n` +
                         `🌐 *Source:* ${item.source}\n` +
+                        (item.duration ? `⏱️ *Duration:* ${item.duration}\n` : '') +
                         tapDl +
                         (oneTapSub ? `👉 🇸🇮 *1-Tap Subtitle:* ${oneTapSub}\n` : '') +
                         `\n`;
@@ -1543,6 +1697,28 @@ cmd({
         await reply(`⏳ *"${selected.title}" සඳහා තොරතුරු සහ ලින්ක් ලබා ගනිමින් පවතී... (TG Cloud)*`);
 
         const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+        const isYouTube = selected.isYouTube || (selected.link && (selected.link.includes('youtube.com') || selected.link.includes('youtu.be')));
+
+        if (isYouTube) {
+            const tapVideo = botNum ? createOneTapLink(botNum, `.dlfilm ${selected.link}`) : '';
+            const tapMp3 = botNum ? createOneTapLink(botNum, `.mp3 ${selected.link}`) : '';
+            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${selected.cleanTitle || selected.title}`) : '';
+
+            let responseMsg = `👑 *${selected.title}* 👑\n` +
+                              `🌐 *Source:* ${selected.source}\n` +
+                              `⚡ *Engine:* TG Cloud\n` +
+                              (selected.duration ? `⏱️ *Duration:* ${selected.duration}\n` : '') +
+                              `\n` +
+                              (tapVideo ? `👉 ⚡ 📥 *1-Tap Download Video (HD):*\n${tapVideo}\n\n` : '') +
+                              (tapMp3 ? `👉 🎵 *1-Tap MP3 Audio:*\n${tapMp3}\n\n` : '') +
+                              (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
+                              `🔗 *Direct Cinema Stream:* ${selected.link}\n\n` +
+                              `💡 _ඉහත 1-Tap Download Video හෝ Subtitle ලින්ක් එක Click කිරීමෙන් සෘජුවම ලබා ගත හැක._\n\n` +
+                              `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
+
+            return await conn.sendMessage(from, { text: responseMsg }, { quoted: mek });
+        }
+
         const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${selected.title}`) : '';
 
         let serversText = "";
