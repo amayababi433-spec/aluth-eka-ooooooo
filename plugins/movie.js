@@ -1974,12 +1974,175 @@ cmd({
                      `📦 *File:* ${subData.fileName} (${sizeKb} KB)\n` +
                      `⚡ *Engine:* TG Cloud (Universal Subtitles)\n` +
                      `🌐 *Source:* ${subData.source || 'TG Cloud'}\n\n` +
+                     `💡 *Sync Tip:* වීඩියෝවට වඩා Subtitle එක කලින් හෝ පසුව දිස්වේ නම්, මෙම file එකට Reply කර *.subshift +2.5* හෝ *.subshift -2* ලබා දී Timing සකසා ගන්න.\n\n` +
                      `_Downloaded via ＤＭＣ™ (TG Engine)_`
         }, { quoted: mek });
 
     } catch (err) {
         console.error("Sub Command Error:", err.message);
         reply("❌ *Subtitle ගොනුව ලබා ගැනීමට නොහැකි විය.*");
+    }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 8.5 COMMAND: .subshift / .subsync (Instant Subtitle Resync & Time-Shifter)
+// ─────────────────────────────────────────────────────────────
+function shiftSrtTime(srtContent, offsetMs = 0, fpsRatio = 1.0) {
+    function parseMs(timeStr) {
+        const [hms, ms] = timeStr.trim().split(',');
+        const [h, m, s] = hms.split(':').map(Number);
+        return (h * 3600 + m * 60 + s) * 1000 + Number(ms);
+    }
+
+    function formatMs(totalMs) {
+        if (totalMs < 0) totalMs = 0;
+        const ms = Math.floor(totalMs % 1000);
+        const totalSec = Math.floor(totalMs / 1000);
+        const s = totalSec % 60;
+        const totalMin = Math.floor(totalSec / 60);
+        const m = totalMin % 60;
+        const h = Math.floor(totalMin / 60);
+
+        const pad = (n, len = 2) => String(n).padStart(len, '0');
+        return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+    }
+
+    return srtContent.replace(/(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/g, (match, start, end) => {
+        let startMs = parseMs(start);
+        let endMs = parseMs(end);
+
+        if (fpsRatio !== 1.0) {
+            startMs = Math.round(startMs * fpsRatio);
+            endMs = Math.round(endMs * fpsRatio);
+        }
+
+        startMs += offsetMs;
+        endMs += offsetMs;
+
+        if (startMs < 0) startMs = 0;
+        if (endMs < startMs) endMs = startMs + 1000;
+
+        return `${formatMs(startMs)} --> ${formatMs(endMs)}`;
+    });
+}
+
+function parseShiftArgs(argsStr) {
+    let offsetMs = 0;
+    let fpsRatio = 1.0;
+    let movieName = "";
+
+    const parts = (argsStr || '').trim().split(/\s+/);
+    const remaining = [];
+
+    for (const p of parts) {
+        if (/^(?:[-+]\d+(?:\.\d+)?(?:s|sec)?|\d+(?:\.\d+)?(?:s|sec))$/i.test(p)) {
+            const sec = parseFloat(p.replace(/s|sec/gi, ''));
+            offsetMs += Math.round(sec * 1000);
+        } else if (/^[-+]?\d+ms$/i.test(p)) {
+            const ms = parseInt(p.replace(/ms/gi, ''), 10);
+            offsetMs += ms;
+        } else if (/23(?:.976)?to25/i.test(p)) {
+            fpsRatio *= (23.976 / 25.0);
+        } else if (/25to23(?:.976)?/i.test(p)) {
+            fpsRatio *= (25.0 / 23.976);
+        } else {
+            remaining.push(p);
+        }
+    }
+
+    movieName = remaining.join(" ").trim();
+    return { offsetMs, fpsRatio, movieName };
+}
+
+cmd({
+    pattern: "subshift",
+    alias: ["subsync", "syncsub", "shiftsub", "resync"],
+    desc: "Resynchronize Subtitle Timing (+/- seconds / FPS adjustment)",
+    category: "downloader",
+    react: "⏱️",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply, quoted }) => {
+    try {
+        const parsed = parseShiftArgs(q || '');
+
+        if (!q && !quoted) {
+            return reply(
+                `⏱️ *SUBTITLE TIMING & SYNC TOOL* ⏱️\n\n` +
+                `Subtitle එක video එකට වඩා කලින් හෝ පසුව play වේ නම් (Desync issue), මෙම විධානයෙන් තත්පර ගණනකින් වෙලාව නිවැරදි කරගත හැක.\n\n` +
+                `📌 *භාවිතය:*\n` +
+                `1. Bot එවන ලද හෝ ඕනෑම Subtitle (.srt) File එකකට *Reply* කරමින්:\n` +
+                `   • *.subshift +3* (තත්පර 3 ක් පස්සට තල්ලු කිරීමට)\n` +
+                `   • *.subshift -2.5* (තත්පර 2.5 ක් ඉදිරියට ගැනීමට)\n` +
+                `   • *.subshift 23to25* (23.976 FPS සිට 25 FPS PAL වලට මාරු කිරීමට)\n` +
+                `   • *.subshift 25to23* (25 FPS සිට 23.976 FPS වලට මාරු කිරීමට)\n\n` +
+                `2. චිත්‍රපටයේ නම සහ වෙලාව කෙලින්ම ලබා දීමෙන්:\n` +
+                `   • *.subshift Deadpool +4*\n` +
+                `   • *.subshift Main Ladega -1.5*\n\n` +
+                `_👑 Powered by ＤＭＣ™ (TG Engine)_`
+            );
+        }
+
+        let srtContent = "";
+        let originalFileName = "Subtitle.srt";
+
+        // Check if replied to a document message
+        const docMsg = quoted?.message?.documentMessage || quoted?.message?.documentWithCaptionMessage?.message?.documentMessage;
+
+        if (docMsg) {
+            originalFileName = docMsg.fileName || "Subtitle.srt";
+            await conn.sendPresenceUpdate('composing', from);
+            await reply("⏳ *Subtitle ගොනුව බාගත කර Timing සකසමින් පවතී...*");
+            const buf = await m.quoted.download();
+            srtContent = buf.toString('utf-8');
+        } else if (parsed.movieName) {
+            await conn.sendPresenceUpdate('composing', from);
+            await reply(`⏳ *"${parsed.movieName}" සඳහා Subtitle ලබා ගෙන Timing සකසමින් පවතී...*`);
+            const subData = await fetchSinhalaSubtitle(parsed.movieName);
+            if (subData && subData.buffer) {
+                originalFileName = subData.fileName || `${parsed.movieName}.srt`;
+                srtContent = subData.buffer.toString('utf-8');
+            } else {
+                return reply(`❌ *"${parsed.movieName}" සඳහා Subtitle සොයාගත නොහැකි විය.*`);
+            }
+        } else {
+            return reply("⚠️ *කරුණාකර Subtitle (.srt) ගොනුවකට Reply කර හෝ චිත්‍රපටයේ නම සමඟ වෙලාව ලබා දෙන්න! (උදා: .subshift +3.5)*");
+        }
+
+        if (!srtContent || !srtContent.includes('-->')) {
+            return reply("❌ *ලබාදුන් ගොනුව වලංගු SRT උපසිරැසි ගොනුවක් නොවේ.*");
+        }
+
+        const shifted = shiftSrtTime(srtContent, parsed.offsetMs, parsed.fpsRatio);
+
+        let descText = [];
+        if (parsed.offsetMs !== 0) {
+            const sec = (parsed.offsetMs / 1000).toFixed(1);
+            descText.push(`${parsed.offsetMs > 0 ? '+' : ''}${sec}s`);
+        }
+        if (parsed.fpsRatio !== 1.0) {
+            descText.push(`FPS Scaled (x${parsed.fpsRatio.toFixed(3)})`);
+        }
+        if (descText.length === 0) descText.push('No timing change');
+
+        const label = descText.join(', ');
+        const cleanBase = originalFileName.replace(/\.srt$/i, '').replace(/_synced.*$/i, '');
+        const newFileName = `${cleanBase}_synced_${label.replace(/[^\w.-]/g, '_')}.srt`;
+
+        await conn.sendMessage(from, {
+            document: Buffer.from(shifted, 'utf-8'),
+            mimetype: 'text/plain',
+            fileName: newFileName,
+            caption: `👑 *${newFileName}* 👑\n\n` +
+                     `⏱️ *Timing Adjustment:* ${label}\n` +
+                     `📦 *Status:* 100% Timing Synchronized!\n` +
+                     `⚡ *Engine:* TG Cloud Precision Sync\n\n` +
+                     `💡 _මෙම නිවැරදි කළ Subtitle ගොනුව ඔබේ Video Player එකට දමා නරඹන්න._\n\n` +
+                     `_👑 Powered by ＤＭＣ™ (TG Engine)_`
+        }, { quoted: mek });
+
+    } catch (err) {
+        console.error("SubShift Error:", err.message);
+        reply("❌ *Subtitle Timing සැකසීමේදී දෝෂයක් සිදු විය.*");
     }
 });
 

@@ -1,0 +1,80 @@
+name: Cloud Video & Subtitle Encoder (GitHub Runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: 'Direct MP4 / Stream URL'
+        required: true
+      sub_url:
+        description: 'SRT Subtitle URL (Optional)'
+        required: false
+        default: ''
+      action_type:
+        description: 'Task Type: burn_in (Hardcode Subs) / whisper_transcribe (AI Speech-to-Sub)'
+        required: true
+        default: 'burn_in'
+        type: choice
+        options:
+          - burn_in
+          - whisper_transcribe
+  repository_dispatch:
+    types: [encode_video_sub]
+
+jobs:
+  process_video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up FFmpeg & Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg python3-pip curl jq
+          pip install --upgrade yt-dlp openai-whisper
+
+      - name: Download Media & Process
+        run: |
+          VIDEO_URL="${{ github.event.inputs.video_url || github.event.client_payload.video_url }}"
+          SUB_URL="${{ github.event.inputs.sub_url || github.event.client_payload.sub_url }}"
+          ACTION_TYPE="${{ github.event.inputs.action_type || github.event.client_payload.action_type || 'burn_in' }}"
+
+          echo "🚀 Starting Cloud Video & Subtitle Processing on GitHub Runner..."
+          echo "Action: $ACTION_TYPE"
+
+          # 1. Download Video
+          echo "📥 Downloading video stream..."
+          curl -L -A "Mozilla/5.0" -o "input_video.mp4" "$VIDEO_URL"
+
+          # 2. Download or Prepare Subtitle
+          if [ -n "$SUB_URL" ]; then
+            echo "📥 Downloading subtitle..."
+            curl -L -A "Mozilla/5.0" -o "input_sub.srt" "$SUB_URL"
+          fi
+
+          if [ "$ACTION_TYPE" = "burn_in" ] && [ -f "input_sub.srt" ]; then
+            echo "🔥 Burning subtitle into video (FFmpeg Hardcoding)..."
+            ffmpeg -y -i input_video.mp4 -vf "subtitles=input_sub.srt:force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3'" -c:v libx264 -preset veryfast -crf 23 -c:a copy output_encoded.mp4
+          elif [ "$ACTION_TYPE" = "whisper_transcribe" ]; then
+            echo "🎙️ Running Whisper Speech-to-Text Auto-Transcription..."
+            whisper input_video.mp4 --model small --language auto --output_format srt --output_dir .
+            mv *.srt generated_subs.srt
+            ffmpeg -y -i input_video.mp4 -vf "subtitles=generated_subs.srt:force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3'" -c:v libx264 -preset veryfast -crf 23 -c:a copy output_encoded.mp4
+          else
+            echo "⚠️ No subtitle provided for burn_in, converting container..."
+            cp input_video.mp4 output_encoded.mp4
+          fi
+
+          # 3. Upload encoded video to Pixeldrain
+          echo "📤 Uploading encoded video to Pixeldrain Cloud..."
+          UPLOAD_RES=$(curl -s -T output_encoded.mp4 "https://pixeldrain.com/api/file/")
+          PD_ID=$(echo "$UPLOAD_RES" | jq -r '.id')
+          if [ -n "$PD_ID" ] && [ "$PD_ID" != "null" ]; then
+            DOWNLOAD_URL="https://pixeldrain.com/u/$PD_ID"
+            DIRECT_URL="https://pixeldrain.com/api/file/$PD_ID?download"
+            echo "✅ Processed Video Available at: $DOWNLOAD_URL"
+            echo "✅ Direct Stream URL: $DIRECT_URL"
+          else
+            echo "Upload failed: $UPLOAD_RES"
+          fi
