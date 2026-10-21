@@ -383,6 +383,194 @@ async function formatEpisodeServers(serverLinks, botNum) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 1.8 WORKING DIRECT SERVER AUTO-PICKER & SCRAPER HELPERS
+// ─────────────────────────────────────────────────────────────
+async function extractServersFromPage(pageUrl) {
+    try {
+        const res = await axios.get(pageUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 10000
+        });
+        const $ = cheerio.load(res.data);
+        const servers = [];
+        $('a').each((i, el) => {
+            const h = $(el).attr('href') || '';
+            const t = $(el).text().trim();
+            if (h.includes('/links/') && (
+                t.includes('DLServer') || 
+                t.includes('Server') || 
+                t.includes('Download') || 
+                t.includes('Pixeldrain') || 
+                t.includes('Direct')
+            )) {
+                if (!servers.some(s => s.url === h)) {
+                    let priority = 10;
+                    if (t.includes('DLServer-01') || t.includes('DLServer 01')) priority = 1;
+                    else if (t.includes('Pixeldrain')) priority = 2;
+                    else if (t.includes('DLServer-02')) priority = 3;
+                    else if (t.includes('720p')) priority = 4;
+                    else if (t.includes('1080p')) priority = 5;
+
+                    servers.push({ name: t, url: h, priority });
+                }
+            }
+        });
+
+        servers.sort((a, b) => a.priority - b.priority);
+        return servers;
+    } catch (e) {
+        return [];
+    }
+}
+
+async function autoPickWorkingServer(servers) {
+    if (!servers || servers.length === 0) return null;
+
+    for (const srv of servers) {
+        try {
+            const resolved = await bypassPortalAndResolve(srv.url);
+            if (resolved.success && resolved.directUrl) {
+                return {
+                    serverName: srv.name,
+                    ...resolved
+                };
+            }
+        } catch (e) {}
+    }
+    return null;
+}
+
+async function findWorkingMovieDirectServer(movieQuery) {
+    const cleanQ = sanitizeSearchQuery(movieQuery) || movieQuery;
+    const searchTerms = [movieQuery, cleanQ].filter((x, i, a) => x && a.indexOf(x) === i);
+
+    for (const term of searchTerms) {
+        try {
+            const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(term)}`;
+            const searchRes = await axios.get(searchUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                timeout: 8000
+            });
+            const $ = cheerio.load(searchRes.data);
+            let movieUrl = null;
+            let movieTitle = null;
+
+            $('a').each((i, el) => {
+                const h = $(el).attr('href') || '';
+                const isMovie = h.match(/\/movies\/([^\/]+)\/?$/i);
+                if (isMovie && !movieUrl) {
+                    const slug = isMovie[1].toLowerCase();
+                    if (!['movies', 'language', 'genre', 'year', 'quality'].includes(slug)) {
+                        movieUrl = h;
+                        movieTitle = $(el).attr('title') || $(el).find('img').attr('alt') || $(el).text().trim();
+                    }
+                }
+            });
+
+            if (movieUrl) {
+                const servers = await extractServersFromPage(movieUrl);
+                if (servers.length > 0) {
+                    const picked = await autoPickWorkingServer(servers);
+                    if (picked) {
+                        return {
+                            title: cleanTitleForDisplay(movieTitle || term),
+                            movieUrl,
+                            ...picked
+                        };
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+    return null;
+}
+
+async function findWorkingEpisodeDirectServer(seriesName, targetSeason, targetEp) {
+    const sNum = parseInt(targetSeason, 10) || 1;
+    const eNum = parseInt(targetEp, 10) || 1;
+    const seasonStr = `s0${sNum}`;
+    const epStr = `e${eNum < 10 ? '0' + eNum : eNum}`;
+
+    const cleanSlug = seriesName.toLowerCase().replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-');
+    const directEpUrls = [
+        `https://sinhalasub.lk/episodes/${cleanSlug}-${seasonStr}${epStr}/`,
+        `https://sinhalasub.lk/episodes/${cleanSlug}-season-${sNum}-episode-${eNum}/`
+    ];
+
+    for (const epUrl of directEpUrls) {
+        try {
+            const servers = await extractServersFromPage(epUrl);
+            if (servers.length > 0) {
+                const picked = await autoPickWorkingServer(servers);
+                if (picked) {
+                    return {
+                        title: `${seriesName} S0${sNum}E${eNum < 10 ? '0' + eNum : eNum}`,
+                        epUrl,
+                        ...picked
+                    };
+                }
+            }
+        } catch (e) {}
+    }
+
+    try {
+        const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(seriesName)}`;
+        const searchRes = await axios.get(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 8000
+        });
+        const $ = cheerio.load(searchRes.data);
+        let showUrl = null;
+        $('a').each((i, el) => {
+            const h = $(el).attr('href') || '';
+            const isTv = h.match(/\/tvshows\/([^\/]+)\/?$/i);
+            if (isTv && !showUrl) {
+                const slug = isTv[1].toLowerCase();
+                if (!['tvshows', 'language', 'genre', 'year', 'quality'].includes(slug)) {
+                    showUrl = h;
+                }
+            }
+        });
+
+        if (showUrl) {
+            const showRes = await axios.get(showUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                timeout: 8000
+            });
+            const $s = cheerio.load(showRes.data);
+            let targetEpUrl = null;
+            $s('a[href*="/episodes/"]').each((i, el) => {
+                const h = $s(el).attr('href') || '';
+                const m = h.match(/s(\d+)e(\d+)/i) || h.match(/season-(\d+)-episode-(\d+)/i);
+                if (m) {
+                    const s = parseInt(m[1], 10);
+                    const e = parseInt(m[2], 10);
+                    if (s === sNum && e === eNum && !targetEpUrl) {
+                        targetEpUrl = h;
+                    }
+                }
+            });
+
+            if (targetEpUrl) {
+                const servers = await extractServersFromPage(targetEpUrl);
+                if (servers.length > 0) {
+                    const picked = await autoPickWorkingServer(servers);
+                    if (picked) {
+                        return {
+                            title: `${seriesName} S0${sNum}E${eNum < 10 ? '0' + eNum : eNum}`,
+                            epUrl: targetEpUrl,
+                            ...picked
+                        };
+                    }
+                }
+            }
+        }
+    } catch (e) {}
+
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────
 // 2. AUTO-MIND DYNAMIC SERIES SCRAPER (Zero Hardcoding)
 // ─────────────────────────────────────────────────────────────
 async function getLiveSeriesData(query) {
@@ -585,6 +773,38 @@ async function getBaiscopeLiveSeries(cleanQuery, filterSeason = null) {
 async function searchMoviesMulti(query) {
     let results = [];
 
+    // Search Sinhalasub first (Real Movies and TV Shows only, strictly ignoring navbars)
+    try {
+        const res = await axios.get(`https://sinhalasub.lk/?s=${encodeURIComponent(query)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 10000
+        });
+        const $ = cheerio.load(res.data);
+        $('a').each((i, el) => {
+            const h = $(el).attr('href') || '';
+            const isMovie = h.match(/\/movies\/([^\/]+)\/?$/i);
+            const isTv = h.match(/\/tvshows\/([^\/]+)\/?$/i);
+
+            if (isMovie || isTv) {
+                const slug = (isMovie ? isMovie[1] : isTv[1]).toLowerCase();
+                // Strictly exclude header navbar links & categories
+                if (!['movies', 'tvshows', 'language', 'genre', 'year', 'quality'].includes(slug)) {
+                    const rawTitle = $(el).attr('title') || $(el).find('img').attr('alt') || $(el).text().trim();
+                    const clean = cleanTitleForDisplay(rawTitle);
+                    if (clean && clean.length > 2 && !results.some(r => r.link === h) && results.length < 6) {
+                        results.push({
+                            title: clean,
+                            rawTitle: rawTitle,
+                            type: isMovie ? 'Movie' : 'TV Series',
+                            link: h,
+                            source: 'Sinhalasub.lk'
+                        });
+                    }
+                }
+            }
+        });
+    } catch (e) {}
+
     // Search Baiscope using modern endpoint
     try {
         const res = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(query)}`, {
@@ -593,36 +813,18 @@ async function searchMoviesMulti(query) {
         });
         const $ = cheerio.load(res.data);
         $('article').each((i, el) => {
-            if (i < 4) {
+            if (results.length < 8) {
                 const title = $(el).find('a').text().trim().replace(/\s+/g, ' ');
                 const link = $(el).find('a').attr('href');
-                if (title && link) {
+                if (title && link && !results.some(r => r.link === link)) {
                     results.push({
-                        title,
+                        title: cleanTitleForDisplay(title),
+                        rawTitle: title,
+                        type: title.toLowerCase().includes('season') || title.toLowerCase().includes('episode') ? 'TV Series' : 'Movie',
                         link: link.startsWith('http') ? link : `https://www.baiscope.lk${link}`,
                         source: 'Baiscope.lk'
                     });
                 }
-            }
-        });
-    } catch (e) {}
-
-    // Search Sinhalasub
-    try {
-        const res = await axios.get(`https://sinhalasub.lk/?s=${encodeURIComponent(query)}`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000
-        });
-        const $ = cheerio.load(res.data);
-        $('a[href*="/movies/"], a[href*="/tvshows/"]').each((i, el) => {
-            const h = $(el).attr('href');
-            const t = $(el).text().trim() || $(el).attr('title') || '';
-            if (h && t && t.length > 3 && !results.some(r => r.link === h) && results.length < 6) {
-                results.push({
-                    title: t,
-                    link: h,
-                    source: 'Sinhalasub.lk'
-                });
             }
         });
     } catch (e) {}
@@ -770,14 +972,16 @@ cmd({
 
             const serversText = await formatEpisodeServers(serverLinks, botNum);
             const displayTitle = liveData?.title || showName;
+            const autoTapDl = botNum ? createOneTapLink(botNum, `.epdl ${cleanCmdName} ${targetSeason} ${targetEp}`) : '';
 
             const cardMsg = `👑 *${displayTitle.toUpperCase()}* 👑\n` +
                             `🎬 *${seasonStr}E${epStr} - ${epTitle}*\n` +
                             `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                            (autoTapDl ? `👉 ⚡ 📥 *1-Tap Download Best Server (Auto-Mind):*\n${autoTapDl}\n\n` : '') +
                             serversText +
                             (epLink ? `🔗 *Watch / Download Page:*\n${epLink}\n\n` : '') +
                             (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
-                            `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් මෙම Episode එකේ Sinhala Subtitle ලබා ගත හැක._\n\n` +
+                            `💡 _ඉහත 1-Tap Download හෝ Subtitle ලින්ක් එක Click කිරීමෙන් සෘජුවම ලබා ගත හැක._\n\n` +
                             `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
 
             return await conn.sendMessage(from, { text: cardMsg }, { quoted: mek });
@@ -819,13 +1023,15 @@ cmd({
 
             const serversText = await formatEpisodeServers(serverLinks, botNum);
             const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${cmdShowName}`) : '';
+            const autoMovieDl = botNum ? createOneTapLink(botNum, `.dlfilm ${cmdShowName}`) : '';
 
             const movieCard = `👑 *${seriesData.title.toUpperCase()} (FULL MOVIE)* 👑\n` +
                               `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                              (autoMovieDl ? `👉 ⚡ 📥 *1-Tap Download Movie (Auto-Mind):*\n${autoMovieDl}\n\n` : '') +
                               serversText +
                               `🔗 *Watch / Download Page:*\n${seriesData.showUrl}\n\n` +
                               (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
-                              `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් Sinhala Subtitle ලබා ගත හැක._\n\n` +
+                              `💡 _ඉහත 1-Tap Download හෝ Subtitle ලින්ක් එක Click කිරීමෙන් ලබා ගත හැක._\n\n` +
                               `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
 
             return await conn.sendMessage(from, { text: movieCard }, { quoted: mek });
@@ -839,7 +1045,7 @@ cmd({
 
         seriesData.episodes.forEach(e => {
             const epCode = `S0${e.season}E${e.episode < 10 ? '0' + e.episode : e.episode}`;
-            const tapDl = botNum ? createOneTapLink(botNum, `.ep ${cmdShowName} ${e.season} ${e.episode}`) : '';
+            const tapDl = botNum ? createOneTapLink(botNum, `.epdl ${cmdShowName} ${e.season} ${e.episode}`) : '';
             const tapSub = botNum ? createOneTapLink(botNum, `.sub ${cmdShowName} ${epCode}`) : '';
 
             menuText += `🎬 *[${epCode}]* ${e.title}\n` +
@@ -941,16 +1147,17 @@ cmd({
         } catch (e) {}
 
         const serversText = await formatEpisodeServers(serverLinks, botNum);
-
+        const autoTapDl = botNum ? createOneTapLink(botNum, `.epdl ${seriesName} ${targetSeason} ${targetEp}`) : '';
         const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${seriesName} ${seasonStr}E${epStr}`) : '';
 
         const card = `👑 *${seriesName.toUpperCase()}* 👑\n` +
                      `🎬 *${seasonStr}E${epStr} - ${epTitle}*\n` +
                      `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                     (autoTapDl ? `👉 ⚡ 📥 *1-Tap Download Best Server (Auto-Mind):*\n${autoTapDl}\n\n` : '') +
                      serversText +
                      `🔗 *Watch / Download Page:*\n${epLink}\n\n` +
                      (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
-                     `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් ක්ෂණිකව මෙම Episode එකේ Sinhala Subtitle (.zip / .srt) ගොනුව ලබා ගත හැක._\n\n` +
+                     `💡 _ඉහත 1-Tap Download හෝ Subtitle ලින්ක් එක Click කිරීමෙන් සෘජුවම ලබා ගත හැක._\n\n` +
                      `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
 
         return await conn.sendMessage(from, { text: card }, { quoted: mek });
@@ -962,13 +1169,13 @@ cmd({
 });
 
 // ─────────────────────────────────────────────────────────────
-// 5.5 COMMAND: .dlep / .dlfilm (Auto-Verify Portal & Send MP4 Document)
+// 5.5 COMMAND: .dlep / .dlfilm / .epdl (Auto-Verify Portal & Send MP4 Document)
 // ─────────────────────────────────────────────────────────────
 cmd({
     pattern: "dlep",
-    alias: ["dlfilm", "getep", "sinhalasubdl", "viddl"],
+    alias: ["dlfilm", "epdl", "getep", "sinhalasubdl", "viddl", "moviedl"],
     react: "🎬",
-    desc: "Auto-Verify Secure Download Portal & Send Video Document to WhatsApp",
+    desc: "Auto-Verify Working Server & Send Video Document to WhatsApp",
     category: "download",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply, sender }) => {
@@ -986,29 +1193,62 @@ cmd({
     try {
         if (!q) {
             DownloadGuard.releaseLock(from, false);
-            return reply("🎬 *භාවිතය:* `.dlep <Portal_URL>`\n\nඋදාහරණ:\n*.dlep https://sinhalasub.lk/links/wupim2somd/*");
+            return reply("🎬 *භාවිතය:*\n• *.dlfilm <Movie Name>* (චිත්‍රපට සෘජුවම බාගත කිරීමට)\n• *.epdl <Series> <Season> <Episode>* (Episode සෘජුවම බාගත කිරීමට)\n• *.dlep <Portal_URL>* (Portal Link එකකින් සෘජුවම බාගත කිරීමට)");
         }
 
-        const urlMatch = q.match(/https?:\/\/[^\s]+/i);
-        if (!urlMatch) {
-            DownloadGuard.releaseLock(from, false);
-            return reply("❌ *වලංගු බාගත කිරීමේ Link එකක් හමු නොවීය!*");
+        const trimmed = q.trim();
+        const urlMatch = trimmed.match(/https?:\/\/[^\s]+/i);
+
+        let resolved = null;
+
+        if (urlMatch) {
+            // Mode A: Direct portal URL
+            const targetUrl = urlMatch[0];
+            await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
+            await reply("⚡ *Auto Mind: Secure Portal එක Auto-Verify කරමින් පවතී...*\n_No Ads • No 3-Step Waiting • Direct Stream Extracting..._");
+            resolved = await bypassPortalAndResolve(targetUrl);
+        } else {
+            // Mode B / C: Text query (Movie or Episode)
+            await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
+
+            // Check if query is episode request (e.g. "The Manipulated 1 1", "One Piece S01E02", "Loki 1 2")
+            const epMatch = trimmed.match(/(?:s(\d+)\s*e(\d+))|(?:season\s*(\d+)\s*ep(?:isode)?\s*(\d+))|(?:\b(\d+)\s+(\d+)$)/i);
+
+            if (epMatch) {
+                // It's an episode!
+                let sNum = 1, eNum = 1;
+                let showName = trimmed;
+
+                if (epMatch[1] && epMatch[2]) {
+                    sNum = parseInt(epMatch[1], 10);
+                    eNum = parseInt(epMatch[2], 10);
+                    showName = trimmed.replace(epMatch[0], '').trim();
+                } else if (epMatch[3] && epMatch[4]) {
+                    sNum = parseInt(epMatch[3], 10);
+                    eNum = parseInt(epMatch[4], 10);
+                    showName = trimmed.replace(epMatch[0], '').trim();
+                } else if (epMatch[5] && epMatch[6]) {
+                    sNum = parseInt(epMatch[5], 10);
+                    eNum = parseInt(epMatch[6], 10);
+                    showName = trimmed.replace(new RegExp(`\\s+${sNum}\\s+${eNum}$`), '').trim();
+                }
+
+                await reply(`⚡ *Auto Mind: "${showName}" [S0${sNum}E${eNum < 10 ? '0' + eNum : eNum}] සොයමින් Direct Server තෝරමින් පවතී...*\n_Auto-Selecting Working Server • Bypassing Portal..._`);
+                resolved = await findWorkingEpisodeDirectServer(showName, sNum, eNum);
+            } else {
+                // It's a Movie!
+                await reply(`⚡ *Auto Mind: "${trimmed}" චිත්‍රපටය සොයමින් Direct Server තෝරමින් පවතී...*\n_Auto-Selecting Working Server • Bypassing Portal..._`);
+                resolved = await findWorkingMovieDirectServer(trimmed);
+            }
         }
 
-        const targetUrl = urlMatch[0];
-
-        // Anti-Ban Human Presence Simulation
-        await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
-        await reply("⚡ *Auto Mind: Secure Portal එක Auto-Verify කරමින් පවතී...*\n_No Ads • No 3-Step Waiting • Direct Stream Extracting..._");
-
-        const resolved = await bypassPortalAndResolve(targetUrl);
-        if (!resolved.success || !resolved.directUrl) {
-            return reply(`❌ *Portal එක Auto-Verify කිරීමට නොහැකි විය: ${resolved.error || 'Direct stream link not found'}*`);
+        if (!resolved || !resolved.success || !resolved.directUrl) {
+            return reply(`❌ *වීඩියෝව හෝ Direct Server සොයා ගැනීමට නොහැකි විය: ${resolved?.error || 'No working direct server found'}*`);
         }
 
         // Update active task title in DownloadGuard
         DownloadGuard.updateTask(from, {
-            title: resolved.fileName || targetUrl,
+            title: resolved.fileName || resolved.title || trimmed,
             size: resolved.sizeFormatted
         });
 
@@ -1017,7 +1257,7 @@ cmd({
             return reply(`⚠️ *ගොනුවේ ප්‍රමාණය WhatsApp Document සීමාවට (2GB) වඩා වැඩියි (${resolved.sizeFormatted}).*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_Browser එකෙන් ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
         }
 
-        await reply(`🚀 *Portal Verified! (${resolved.quality || 'HD'})*\n📦 *Size:* ${resolved.sizeFormatted}\n🎬 *File:* ${resolved.fileName}\n\n⏳ *WhatsApp Document ගොනුව (Image 3 ආකාරයට) සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_`);
+        await reply(`🚀 *Direct Server Verified! [${resolved.serverName || 'Direct'}] (${resolved.quality || 'HD'})*\n📦 *Size:* ${resolved.sizeFormatted}\n🎬 *File:* ${resolved.fileName}\n\n⏳ *WhatsApp Document ගොනුව සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_`);
 
         // Anti-Ban human presence simulation
         await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
@@ -1096,7 +1336,7 @@ cmd({
 
         data.episodes.forEach(e => {
             const epCode = `S0${e.season}E${e.episode < 10 ? '0' + e.episode : e.episode}`;
-            const tapDl = botNum ? createOneTapLink(botNum, `.ep ${data.cleanName} ${e.season} ${e.episode}`) : '';
+            const tapDl = botNum ? createOneTapLink(botNum, `.epdl ${data.cleanName} ${e.season} ${e.episode}`) : '';
             const tapSub = botNum ? createOneTapLink(botNum, `.sub ${data.cleanName} ${epCode}`) : '';
 
             menu += `🎬 *[${epCode}]* ${e.title}\n` +
@@ -1150,16 +1390,34 @@ cmd({
                        `─────────────────────────\n`;
 
         results.slice(0, 5).forEach((item, idx) => {
+            const isSeries = item.type === 'TV Series';
+            const icon = isSeries ? '📺' : '🎥';
+            const typeLabel = isSeries ? '[TV Series]' : '[Movie]';
+
+            // 1-Tap Links
+            let tapDl = '';
+            if (isSeries) {
+                const tapSeries = botNum ? createOneTapLink(botNum, `.series ${item.title}`) : '';
+                const tapEp1 = botNum ? createOneTapLink(botNum, `.epdl ${item.title} 1 1`) : '';
+                tapDl = (tapSeries ? `👉 📥 *1-Tap All Episodes:* ${tapSeries}\n` : '') +
+                        (tapEp1 ? `👉 ⚡ *1-Tap Download Ep 1:* ${tapEp1}\n` : '');
+            } else {
+                const tapMovie = botNum ? createOneTapLink(botNum, `.dlfilm ${item.title}`) : '';
+                tapDl = tapMovie ? `👉 📥 *1-Tap Download:* ${tapMovie}\n` : '';
+            }
+
             const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${item.title}`) : '';
-            menuText += `*${idx + 1}.* 🎥 *${item.title}*\n` +
+
+            menuText += `*${idx + 1}.* ${icon} *${item.title}* ${typeLabel}\n` +
                         `🌐 *Source:* ${item.source}\n` +
+                        tapDl +
                         (oneTapSub ? `👉 🇸🇮 *1-Tap Subtitle:* ${oneTapSub}\n` : '') +
                         `\n`;
         });
 
         menuText += `─────────────────────────\n` +
                     `_බාගත කිරීමට හෝ සබැඳි ලබා ගැනීමට අදාළ අංකය (1-${Math.min(5, results.length)}) Reply කරන්න._\n` +
-                    `_නැතහොත් කෙලින්ම Subtitle ලබා ගැනීමට 1-Tap Link එක ඔබන්න._`;
+                    `_නැතහොත් කෙලින්ම Video (1-Tap Download) හෝ Subtitle ලබා ගැනීමට ඉහත Link එක ඔබන්න._`;
 
         global.movieSessions[sender] = {
             results: results.slice(0, 5),
@@ -1285,9 +1543,22 @@ cmd({
             } catch (e) {}
         }
 
+        const isSeries = selected.type === 'TV Series' || (selected.link && selected.link.includes('/tvshows/'));
+        let tapDl = '';
+        if (isSeries) {
+            const tapSeries = botNum ? createOneTapLink(botNum, `.series ${selected.title}`) : '';
+            const tapEp1 = botNum ? createOneTapLink(botNum, `.epdl ${selected.title} 1 1`) : '';
+            tapDl = (tapSeries ? `👉 📥 *1-Tap All Episodes:* ${tapSeries}\n` : '') +
+                    (tapEp1 ? `👉 ⚡ *1-Tap Download Ep 1:* ${tapEp1}\n` : '');
+        } else {
+            const tapMovie = botNum ? createOneTapLink(botNum, `.dlfilm ${selected.title}`) : '';
+            tapDl = tapMovie ? `👉 ⚡ 📥 *1-Tap Download Video (Direct Working Server):*\n${tapMovie}\n\n` : '';
+        }
+
         let responseMsg = `👑 *${selected.title}* 👑\n` +
                           `🌐 *Source:* ${selected.source}\n` +
                           `⚡ *Engine:* TG Cloud\n\n` +
+                          tapDl +
                           serversText +
                           `🔗 *Web Page:* ${selected.link}\n\n`;
 
@@ -1295,7 +1566,7 @@ cmd({
             responseMsg += `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n`;
         }
 
-        responseMsg += `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් ක්ෂණිකව Sinhala Subtitle ගොනුව (.zip) ලබා ගත හැක._\n\n` +
+        responseMsg += `💡 _ඉහත 1-Tap Download හෝ Subtitle ලින්ක් එක Click කිරීමෙන් සෘජුවම ලබා ගත හැක._\n\n` +
                        `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
 
         await conn.sendMessage(from, { text: responseMsg }, { quoted: mek });
