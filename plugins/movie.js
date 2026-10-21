@@ -468,6 +468,35 @@ async function autoPickWorkingServer(servers) {
     return null;
 }
 
+// Helper: Extract accurate file size and formatted string from YouTube Media Data
+function extractSizeFromYtData(ytData) {
+    let sizeMb = 0;
+    let sizeFormatted = 'HD Stream';
+
+    // 1. Check clen in download_url (Content-Length bytes from googlevideo)
+    const clenMatch = (ytData?.download_url || '').match(/clen(?:%3D|=)(\d+)/i);
+    if (clenMatch && clenMatch[1]) {
+        const bytes = parseInt(clenMatch[1], 10);
+        sizeMb = parseFloat((bytes / (1024 * 1024)).toFixed(1));
+        sizeFormatted = `${sizeMb} MB`;
+    } else if (ytData?.filesize_mb) {
+        sizeMb = parseFloat(ytData.filesize_mb);
+        sizeFormatted = `${sizeMb} MB`;
+    } else if (ytData?.size_bytes) {
+        sizeMb = parseFloat((ytData.size_bytes / (1024 * 1024)).toFixed(1));
+        sizeFormatted = `${sizeMb} MB`;
+    } else if (ytData?.duration) {
+        // Full movie estimate ~3.8MB/min for 720p/1080p
+        const durSec = typeof ytData.duration === 'number' ? ytData.duration : (parseInt(ytData.duration, 10) || 0);
+        if (durSec > 0) {
+            sizeMb = parseFloat(((durSec / 60) * 3.8).toFixed(1));
+            sizeFormatted = `~${sizeMb} MB`;
+        }
+    }
+
+    return { sizeMb, sizeFormatted };
+}
+
 async function findWorkingMovieDirectServer(movieQuery) {
     const suggestions = await getSearchEngineSuggestions(movieQuery);
     const cleanQ = sanitizeSearchQuery(movieQuery) || movieQuery;
@@ -519,13 +548,14 @@ async function findWorkingMovieDirectServer(movieQuery) {
             const bestYt = ytResults[0];
             const ytData = await fetchMediaWithFailover(bestYt.link, 'video');
             if (ytData && ytData.download_url) {
+                const sizeInfo = extractSizeFromYtData(ytData);
                 return {
                     success: true,
                     title: ytData.title || bestYt.title,
                     fileName: (ytData.title || bestYt.title).replace(/[^\w\s-]/gi, '') + '.mp4',
                     directUrl: ytData.download_url,
-                    sizeMb: parseFloat(ytData.filesize_mb) || 0,
-                    sizeFormatted: ytData.filesize_mb ? `${ytData.filesize_mb} MB` : 'HD Stream',
+                    sizeMb: sizeInfo.sizeMb,
+                    sizeFormatted: sizeInfo.sizeFormatted,
                     quality: ytData.quality || '1080p / 720p HD',
                     serverName: ytData.engineUsed || 'TG Cloud Cinema Engine',
                     contentType: 'video/mp4'
@@ -1347,13 +1377,14 @@ cmd({
                 await reply("⚡ *Auto Mind: YouTube Cinema Cloud Stream සකසමින් පවතී...*\n_Direct 1080p/720p HD Stream Extracting..._");
                 const ytData = await fetchMediaWithFailover(targetUrl, 'video');
                 if (ytData && ytData.download_url) {
+                    const sizeInfo = extractSizeFromYtData(ytData);
                     resolved = {
                         success: true,
                         title: ytData.title || 'Movie',
                         fileName: (ytData.title || 'Movie').replace(/[^\w\s-]/gi, '') + '.mp4',
                         directUrl: ytData.download_url,
-                        sizeMb: parseFloat(ytData.filesize_mb) || 0,
-                        sizeFormatted: ytData.filesize_mb ? `${ytData.filesize_mb} MB` : 'HD Stream',
+                        sizeMb: sizeInfo.sizeMb,
+                        sizeFormatted: sizeInfo.sizeFormatted,
                         quality: ytData.quality || '1080p / 720p HD',
                         serverName: ytData.engineUsed || 'TG Cloud Cinema Engine',
                         contentType: 'video/mp4'
@@ -1436,8 +1467,18 @@ cmd({
         await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
 
         try {
+            let docPayload = { url: resolved.directUrl };
+            if (resolved.directUrl && resolved.directUrl.includes('trycloudflare.com')) {
+                const streamRes = await axios.get(resolved.directUrl, {
+                    headers: { 'Bypass-Tunnel-Reminder': 'true' },
+                    responseType: 'arraybuffer',
+                    timeout: 60000
+                });
+                docPayload = Buffer.from(streamRes.data);
+            }
+
             await conn.sendMessage(from, {
-                document: { url: resolved.directUrl },
+                document: docPayload,
                 mimetype: resolved.contentType || 'video/mp4',
                 fileName: resolved.fileName,
                 caption: `👑 *${resolved.fileName}* 👑\n\n` +
