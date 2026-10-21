@@ -1443,38 +1443,40 @@ cmd({
             size: resolved.sizeFormatted
         });
 
-        // 🛡️ Permanent Koyeb 512MB RAM Guard: Check safe file size threshold for WhatsApp Document streaming
-        const MAX_CONTAINER_DOC_MB = parseInt(process.env.MAX_DOC_MB || '100', 10);
+        const botNum = conn?.user?.id ? conn.user.id.split(':')[0].split('@')[0] : '';
+        const tapFileAgain = botNum ? createOneTapLink(botNum, `.dlfilm ${trimmed}`) : '';
 
-        if (resolved.sizeMb > MAX_CONTAINER_DOC_MB) {
-            const highSpeedMsg = `👑 *${(resolved.fileName || resolved.title || 'VIDEO').toUpperCase()}* 👑\n\n` +
-                                 `✅ *Status:* Direct Working Server Verified!\n` +
-                                 `🚀 *Server:* ${resolved.serverName || 'DLServer-01'} [${resolved.quality || 'HD'}]\n` +
-                                 `📦 *File Size:* ${resolved.sizeFormatted}\n` +
-                                 `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
-                                 `📥 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n` +
-                                 `💡 *1-Tap Direct Download:*\n` +
-                                 `_ගොනුවේ ප්‍රමාණය ${MAX_CONTAINER_DOC_MB}MB ට වඩා වැඩි බැවින් (${resolved.sizeFormatted}), Cloud Server එකේ RAM පිරී යාම (Memory 97% spike) සහ WhatsApp විසන්ධි වීම (408 Error) 100% වළක්වා, උපරිම වේගයෙන් බාගත කර ගැනීමට සෘජු Direct Stream URL එක ලබා දී ඇත._\n\n` +
-                                 `_🔗 කිසිදු දැන්වීමක් හෝ රැඳී සිටීමකින් තොරව ඉහත නිල් පැහැති ලින්ක් එකෙන් Browser / IDM මඟින් සෘජුවම බාගත කරගත හැක._\n\n` +
-                                 `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
+        // 1. Send High-Speed Direct URL Card first so user has the verified download link
+        const highSpeedMsg = `👑 *${(resolved.fileName || resolved.title || 'VIDEO').toUpperCase()}* 👑\n\n` +
+                             `✅ *Status:* Direct Working Server Verified!\n` +
+                             `🚀 *Server:* ${resolved.serverName || 'DLServer-01'} [${resolved.quality || 'HD'}]\n` +
+                             `📦 *File Size:* ${resolved.sizeFormatted}\n` +
+                             `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                             `📥 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n` +
+                             (tapFileAgain ? `👉 📄 *1-Tap Send Document File to WhatsApp:*\n${tapFileAgain}\n\n` : '') +
+                             `💡 *Direct Download:*\n` +
+                             `_කිසිදු දැන්වීමක් හෝ රැඳී සිටීමකින් තොරව ඉහත නිල් පැහැති ලින්ක් එකෙන් Browser / IDM මඟින් සෘජුවම බාගත කරගත හැක._\n\n` +
+                             `⏳ *WhatsApp Document ගොනුව (File) සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_\n\n` +
+                             `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
 
-            return await conn.sendMessage(from, { text: highSpeedMsg }, { quoted: mek });
-        }
+        await conn.sendMessage(from, { text: highSpeedMsg }, { quoted: mek });
 
-        await reply(`🚀 *Direct Server Verified! [${resolved.serverName || 'Direct'}] (${resolved.quality || 'HD'})*\n📦 *Size:* ${resolved.sizeFormatted}\n🎬 *File:* ${resolved.fileName}\n\n⏳ *WhatsApp Document ගොනුව සකස් කර එවමින් පවතී...*\n_විශාල ගොනුවක් බැවින් කරුණාකර සුළු මොහොතක් රැඳී සිටින්න... (TG Engine)_`);
-
-        // Anti-Ban human presence simulation
+        // 2. Anti-Ban human presence simulation
         await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
 
+        // 3. Prepare and Send WhatsApp Document (Image 1 Format)
         try {
             let docPayload = { url: resolved.directUrl };
             if (resolved.directUrl && resolved.directUrl.includes('trycloudflare.com')) {
                 const streamRes = await axios.get(resolved.directUrl, {
-                    headers: { 'Bypass-Tunnel-Reminder': 'true' },
-                    responseType: 'arraybuffer',
-                    timeout: 60000
+                    headers: {
+                        'Bypass-Tunnel-Reminder': 'true',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    },
+                    responseType: 'stream',
+                    timeout: 300000
                 });
-                docPayload = Buffer.from(streamRes.data);
+                docPayload = { stream: streamRes.data };
             }
 
             await conn.sendMessage(from, {
@@ -1614,16 +1616,16 @@ cmd({
             if (isYouTube) {
                 const tapVideo = botNum ? createOneTapLink(botNum, `.dlfilm ${item.link}`) : '';
                 const tapMp3 = botNum ? createOneTapLink(botNum, `.mp3 ${item.link}`) : '';
-                tapDl = (tapVideo ? `👉 📥 *1-Tap Download Video (HD):* ${tapVideo}\n` : '') +
+                tapDl = (tapVideo ? `👉 📄 *1-Tap Download (File & Link):* ${tapVideo}\n` : '') +
                         (tapMp3 ? `👉 🎵 *1-Tap MP3 Audio:* ${tapMp3}\n` : '');
             } else if (isSeries) {
                 const tapSeries = botNum ? createOneTapLink(botNum, `.series ${item.title}`) : '';
                 const tapEp1 = botNum ? createOneTapLink(botNum, `.epdl ${item.title} 1 1`) : '';
                 tapDl = (tapSeries ? `👉 📥 *1-Tap All Episodes:* ${tapSeries}\n` : '') +
-                        (tapEp1 ? `👉 ⚡ *1-Tap Download Ep 1:* ${tapEp1}\n` : '');
+                        (tapEp1 ? `👉 📄 *1-Tap Ep 1 (File & Link):* ${tapEp1}\n` : '');
             } else {
                 const tapMovie = botNum ? createOneTapLink(botNum, `.dlfilm ${item.title}`) : '';
-                tapDl = tapMovie ? `👉 📥 *1-Tap Download:* ${tapMovie}\n` : '';
+                tapDl = tapMovie ? `👉 📄 *1-Tap Download (File & Link):* ${tapMovie}\n` : '';
             }
 
             const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${item.cleanTitle || item.title}`) : '';
@@ -1750,11 +1752,11 @@ cmd({
                               `⚡ *Engine:* TG Cloud\n` +
                               (selected.duration ? `⏱️ *Duration:* ${selected.duration}\n` : '') +
                               `\n` +
-                              (tapVideo ? `👉 ⚡ 📥 *1-Tap Download Video (HD):*\n${tapVideo}\n\n` : '') +
+                              (tapVideo ? `👉 ⚡ 📄 *1-Tap Download Movie (File & Link):*\n${tapVideo}\n\n` : '') +
                               (tapMp3 ? `👉 🎵 *1-Tap MP3 Audio:*\n${tapMp3}\n\n` : '') +
                               (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
                               `🔗 *Direct Cinema Stream:* ${selected.link}\n\n` +
-                              `💡 _ඉහත 1-Tap Download Video හෝ Subtitle ලින්ක් එක Click කිරීමෙන් සෘජුවම ලබා ගත හැක._\n\n` +
+                              `💡 _ඉහත 1-Tap Download හෝ Subtitle ලින්ක් එක Click කිරීමෙන් සෘජුවම ලබා ගත හැක._\n\n` +
                               `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
 
             return await conn.sendMessage(from, { text: responseMsg }, { quoted: mek });
@@ -1795,7 +1797,7 @@ cmd({
                     (tapEp1 ? `👉 ⚡ *1-Tap Download Ep 1:* ${tapEp1}\n` : '');
         } else {
             const tapMovie = botNum ? createOneTapLink(botNum, `.dlfilm ${selected.title}`) : '';
-            tapDl = tapMovie ? `👉 ⚡ 📥 *1-Tap Download Video (Direct Working Server):*\n${tapMovie}\n\n` : '';
+            tapDl = tapMovie ? `👉 ⚡ 📄 *1-Tap Download Movie (File & Link):*\n${tapMovie}\n\n` : '';
         }
 
         let responseMsg = `👑 *${selected.title}* 👑\n` +
