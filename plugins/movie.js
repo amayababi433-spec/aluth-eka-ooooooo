@@ -74,38 +74,41 @@ async function getSearchEngineSuggestions(query) {
     return list;
 }
 
+// Helper: Clean Movie Title (Noise & metadata strip)
+function cleanMovieTitle(raw) {
+    if (!raw) return '';
+    return raw
+        .replace(/https?:\/\/\S+/gi, '')
+        .replace(/\|.*/g, '')
+        .replace(/-\s*(?:Starring|Full Movie|Official|Hindi|Tamil|Telugu|Malayalam|Kannada|English|Sinhala|Korean|Chinese|Japanese).*/gi, '')
+        .replace(/\b(?:Hindi|Tamil|Telugu|Malayalam|Kannada|English|Sinhala|Korean|Chinese|Japanese)\s+(?:Full\s+)?(?:Movie|Film|Cinema)\b.*/gi, '')
+        .replace(/\b(?:Full\s+Movie|Full\s+Film|4K\s+UHD|4K|UHD|1080p|720p|480p|HDRip|WEB-DL|BluRay|BRRip|DVDRip|x264|x265|HEVC)\b.*/gi, '')
+        .replace(/\[.*?\]|\(.*?\)/g, ' ')
+        .replace(/[^\w\s-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // ─────────────────────────────────────────────────────────────
-// 1. SINHALA SUBTITLE EXTRACTOR (Baiscope Live Redeem Engine)
+// 1. UNIVERSAL SUBTITLE ENGINE (Multi-Tier: Baiscope + SubtitleCat + YTS)
 // ─────────────────────────────────────────────────────────────
-async function fetchSinhalaSubtitle(query) {
+async function fetchBaiscope(baseTitle, year = '', targetSeason = null, targetEp = null) {
     try {
-        const cleanQuery = query
-            .replace(/\(\d{4}\)/g, '')
-            .replace(/sinhala\s*subtitles.*/gi, '')
-            .trim();
-
-        const sMatch = query.match(/s(\d+)\s*e(\d+)/i) || query.match(/s(\d+)/i);
-        const targetSeason = sMatch && sMatch[1] ? parseInt(sMatch[1], 10) : null;
-        const targetEp = sMatch && sMatch[2] ? parseInt(sMatch[2], 10) : null;
-
-        const baseTitle = cleanQuery
-            .replace(/s\d+\s*e\d+/gi, '')
-            .replace(/s\d+/gi, '')
-            .replace(/ep\d+/gi, '')
-            .trim() || sanitizeSearchQuery(query);
-
-        const suggestions = await getSearchEngineSuggestions(baseTitle || cleanQuery);
-        const searchTerms = [...new Set([query, baseTitle, ...suggestions])].filter(Boolean);
+        const searchTerms = [
+            targetSeason && targetEp ? `${baseTitle} S0${targetSeason}E0${targetEp}` : null,
+            year ? `${baseTitle} ${year}` : null,
+            baseTitle
+        ].filter(Boolean);
 
         let posts = [];
-        for (const st of searchTerms.slice(0, 3)) {
+        for (const st of searchTerms) {
             try {
                 const searchRes = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(st)}`, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
                     },
-                    timeout: 8000
+                    timeout: 6000
                 });
 
                 const $ = cheerio.load(searchRes.data);
@@ -125,8 +128,7 @@ async function fetchSinhalaSubtitle(query) {
 
         if (posts.length === 0) return null;
 
-        // Keyword relevancy check: NEVER pick an unrelated article
-        const searchKeywords = (baseTitle || cleanQuery).toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['the', 'and', 'for', 'with'].includes(w));
+        const searchKeywords = baseTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['the', 'and', 'for', 'with'].includes(w));
         let targetPost = null;
         let bestScore = 0;
 
@@ -136,13 +138,12 @@ async function fetchSinhalaSubtitle(query) {
             searchKeywords.forEach(w => {
                 if (lower.includes(w)) score += 2;
             });
-
+            if (year && lower.includes(year)) score += 3;
             if (targetSeason && targetEp) {
                 const sStr = `s0${targetSeason}`.toLowerCase();
                 const eStr = `e0${targetEp}`.toLowerCase();
                 if (lower.includes(sStr) && lower.includes(eStr)) score += 5;
             }
-
             if (score > bestScore) {
                 bestScore = score;
                 targetPost = p;
@@ -151,12 +152,9 @@ async function fetchSinhalaSubtitle(query) {
 
         if (!targetPost || bestScore === 0) return null;
 
-        // Fetch post page to locate download gate
         const postRes = await axios.get(targetPost.url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-            },
-            timeout: 12000
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 8000
         });
 
         const $p = cheerio.load(postRes.data);
@@ -170,13 +168,9 @@ async function fetchSinhalaSubtitle(query) {
 
         if (!downloadGateUrl) return null;
 
-        // Fetch download gate page
         const gateRes = await axios.get(downloadGateUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Referer': targetPost.url
-            },
-            timeout: 12000
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': targetPost.url },
+            timeout: 8000
         });
 
         const $g = cheerio.load(gateRes.data);
@@ -188,49 +182,257 @@ async function fetchSinhalaSubtitle(query) {
 
         if (!token || !id) return null;
 
-        // Wait countdown requirement
         await new Promise(r => setTimeout(r, (wait + 1) * 1000));
 
-        // Redeem download ticket
         const redeemRes = await axios.post('https://www.baiscope.lk/api/download/redeem', {
-            token,
-            id,
-            post: slug
+            token, id, post: slug
         }, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0',
                 'Referer': downloadGateUrl,
                 'Origin': 'https://www.baiscope.lk',
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Content-Type': 'application/json'
             },
-            timeout: 15000
+            timeout: 10000
         });
 
-        if (redeemRes.data && redeemRes.data.data?.url) {
+        if (redeemRes.data?.data?.url) {
             const relUrl = redeemRes.data.data.url;
             const fullFileUrl = relUrl.startsWith('http') ? relUrl : `https://www.baiscope.lk${relUrl}`;
-            const fileName = redeemRes.data.data.file_name || `${query.replace(/[^\w\s-]/gi, '')}_SinhalaSub.zip`;
-            const fileSize = redeemRes.data.data.file_size || 0;
-
+            const fileName = redeemRes.data.data.file_name || `${baseTitle.replace(/[^\w\s-]/gi, '')}_SinhalaSub.zip`;
             const fileRes = await axios.get(fullFileUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Referer': downloadGateUrl
-                },
+                headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': downloadGateUrl },
                 responseType: 'arraybuffer',
-                timeout: 20000
+                timeout: 15000
             });
 
             return {
                 title: targetPost.title,
                 fileName,
-                fileSize: fileSize || fileRes.data.length,
-                buffer: Buffer.from(fileRes.data)
+                fileSize: fileRes.data.length,
+                buffer: Buffer.from(fileRes.data),
+                source: 'Baiscope (Sinhala)',
+                language: 'Sinhala',
+                mimetype: 'application/zip',
+                isSinhala: true
             };
         }
     } catch (e) {
-        console.error("Subtitle Fetch Error:", e.message);
+        console.error('[Baiscope] Error:', e.message);
+    }
+    return null;
+}
+
+async function fetchSubtitleCat(title, year = '', season = null, ep = null) {
+    try {
+        const queryVariants = [
+            season && ep ? `${title} S${season < 10 ? '0' + season : season}E${ep < 10 ? '0' + ep : ep}` : null,
+            year ? `${title} ${year}` : null,
+            title
+        ].filter(Boolean);
+
+        for (const q of queryVariants) {
+            const searchUrl = 'https://www.subtitlecat.com/index.php?search=' + encodeURIComponent(q);
+            const res = await axios.get(searchUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                timeout: 8000
+            });
+            const $ = cheerio.load(res.data);
+            const items = [];
+            $('table.table tr').each((i, el) => {
+                const link = $(el).find('a').attr('href');
+                const t = $(el).find('a').text().trim();
+                if (link && t) items.push({ title: t, link });
+            });
+
+            if (items.length === 0) continue;
+
+            const titleWords = title.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+            let bestItem = null;
+            let bestScore = -1;
+
+            for (const item of items) {
+                const lower = item.title.toLowerCase();
+                let score = 0;
+                titleWords.forEach(w => {
+                    if (lower.includes(w)) score += 3;
+                });
+                if (year && lower.includes(year.toString())) score += 5;
+                if (season && ep) {
+                    const epTag1 = `s0${season}e0${ep}`.toLowerCase();
+                    const epTag2 = `s${season}e${ep}`.toLowerCase();
+                    const epTag3 = `${season}x${ep}`.toLowerCase();
+                    if (lower.includes(epTag1) || lower.includes(epTag2) || lower.includes(epTag3)) score += 10;
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestItem = item;
+                }
+            }
+
+            if (!bestItem || bestScore <= 0) continue;
+
+            const pageUrl = bestItem.link.startsWith('http') ? bestItem.link : 'https://www.subtitlecat.com/' + bestItem.link;
+            const pRes = await axios.get(pageUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                timeout: 8000
+            });
+
+            const $p = cheerio.load(pRes.data);
+            let siLink = null;
+            let enLink = null;
+            let firstLink = null;
+
+            $p('a').each((i, el) => {
+                const href = $p(el).attr('href') || '';
+                if (href.endsWith('.srt')) {
+                    if (!firstLink) firstLink = href;
+                    if (href.includes('-si.srt')) siLink = href;
+                    if (href.includes('-en.srt')) enLink = href;
+                }
+            });
+
+            const targetLink = siLink || enLink || firstLink;
+            if (targetLink) {
+                const fullDl = targetLink.startsWith('http') ? targetLink : 'https://www.subtitlecat.com' + targetLink;
+                const isSinhala = targetLink.includes('-si.srt');
+                const langName = isSinhala ? 'Sinhala' : (targetLink.includes('-en.srt') ? 'English' : 'Multi');
+
+                const srtRes = await axios.get(fullDl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    responseType: 'arraybuffer',
+                    timeout: 15000
+                });
+
+                const buffer = Buffer.from(srtRes.data);
+                const safeName = title.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '_');
+                return {
+                    title: bestItem.title,
+                    fileName: `${safeName}_${langName}Sub.srt`,
+                    fileSize: buffer.length,
+                    buffer,
+                    source: `SubtitleCat (${langName})`,
+                    language: langName,
+                    mimetype: 'text/plain',
+                    isSinhala
+                };
+            }
+        }
+    } catch (e) {
+        console.error('[SubtitleCat] Error:', e.message);
+    }
+    return null;
+}
+
+async function fetchYtsSubs(title, year = '') {
+    try {
+        const searchUrl = 'https://yts-subs.com/search/' + encodeURIComponent(title);
+        const res = await axios.get(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 8000
+        });
+        const $ = cheerio.load(res.data);
+        const movies = [];
+        $('.media-movie-clickable').each((i, el) => {
+            const t = $(el).find('h3').text().trim();
+            const h = $(el).find('a').attr('href');
+            if (t && h) movies.push({ title: t, href: h });
+        });
+
+        if (movies.length === 0) return null;
+
+        const lowerTitle = title.toLowerCase();
+        let targetMovie = movies[0];
+        for (const m of movies) {
+            const mLower = m.title.toLowerCase();
+            if (year && mLower.includes(year)) { targetMovie = m; break; }
+            if (mLower === lowerTitle) { targetMovie = m; break; }
+        }
+
+        const moviePageUrl = 'https://yts-subs.com' + targetMovie.href;
+        const mRes = await axios.get(moviePageUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 8000
+        });
+
+        const $m = cheerio.load(mRes.data);
+        const subs = [];
+        $m('tr').each((i, el) => {
+            const lang = $m(el).find('.sub-lang').text().trim();
+            const a = $m(el).find('a[href*="/subtitles/"]');
+            if (lang && a.length) {
+                subs.push({ lang, href: a.attr('href') });
+            }
+        });
+
+        if (subs.length === 0) return null;
+
+        const siSub = subs.find(s => s.lang.toLowerCase().includes('sinhala'));
+        const enSub = subs.find(s => s.lang.toLowerCase().includes('english'));
+        const chosen = siSub || enSub || subs[0];
+
+        const subPageUrl = 'https://yts-subs.com' + chosen.href;
+        const subRes = await axios.get(subPageUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            timeout: 8000
+        });
+
+        const $s = cheerio.load(subRes.data);
+        const dataLink = $s('#btn-download-subtitle, .download-subtitle').attr('data-link');
+        if (!dataLink) return null;
+
+        const downloadUrl = Buffer.from(dataLink, 'base64').toString('utf8');
+        const zipRes = await axios.get(downloadUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            responseType: 'arraybuffer',
+            timeout: 15000
+        });
+
+        const buffer = Buffer.from(zipRes.data);
+        const safeName = title.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '_');
+        const isSinhala = chosen.lang.toLowerCase().includes('sinhala');
+        return {
+            title: targetMovie.title,
+            fileName: `${safeName}_${isSinhala ? 'Sinhala' : chosen.lang}Sub.zip`,
+            fileSize: buffer.length,
+            buffer,
+            source: `YTS (${chosen.lang})`,
+            language: chosen.lang,
+            mimetype: 'application/zip',
+            isSinhala
+        };
+    } catch (e) {
+        console.error('[YTS] Error:', e.message);
+    }
+    return null;
+}
+
+async function fetchSinhalaSubtitle(rawQuery) {
+    try {
+        const cleaned = cleanMovieTitle(rawQuery);
+        const yearMatch = rawQuery.match(/\b(19\d\d|20\d\d)\b/);
+        const year = yearMatch ? yearMatch[1] : '';
+
+        const sMatch = rawQuery.match(/s(\d+)\s*e(\d+)/i) || rawQuery.match(/season\s*(\d+).*?episode\s*(\d+)/i);
+        const season = sMatch ? parseInt(sMatch[1], 10) : null;
+        const ep = sMatch && sMatch[2] ? parseInt(sMatch[2], 10) : null;
+
+        const baseTitle = cleaned || sanitizeSearchQuery(rawQuery);
+
+        // Tier 1: Baiscope Live Redeem Engine (Local Sri Lankan Sinhala Subtitles)
+        const baiscopeSub = await fetchBaiscope(baseTitle, year, season, ep);
+        if (baiscopeSub && baiscopeSub.buffer) return baiscopeSub;
+
+        // Tier 2: SubtitleCat Universal Engine (100+ languages, prioritizing Sinhala)
+        const catSub = await fetchSubtitleCat(baseTitle, year, season, ep);
+        if (catSub && catSub.buffer) return catSub;
+
+        // Tier 3: YTS Subtitle Archives (Global movies in Sinhala / English)
+        const ytsSub = await fetchYtsSubs(baseTitle, year);
+        if (ytsSub && ytsSub.buffer) return ytsSub;
+
+    } catch (e) {
+        console.error("Universal Subtitle Fetch Error:", e.message);
     }
     return null;
 }
@@ -1628,7 +1830,7 @@ cmd({
                 tapDl = tapMovie ? `👉 📄 *1-Tap Download (File & Link):* ${tapMovie}\n` : '';
             }
 
-            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${item.cleanTitle || item.title}`) : '';
+            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${cleanMovieTitle(item.cleanTitle || item.title)}`) : '';
 
             menuText += `*${idx + 1}.* ${icon} *${item.title}* ${typeLabel}\n` +
                         `🌐 *Source:* ${item.source}\n` +
@@ -1661,18 +1863,18 @@ cmd({
 cmd({
     pattern: "sub",
     alias: ["sinhalasub", "subtitle", "srt", "subtitles"],
-    desc: "Direct Sinhala Subtitle Downloader (.srt / .zip)",
+    desc: "Universal Subtitle Downloader (.srt / .zip)",
     category: "downloader",
     react: "🇸🇮",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) {
-            return reply("🇸🇮 *කරුණාකර Subtitle අවශ්‍ය චිත්‍රපටයේ හෝ Episode එකේ නම ලබා දෙන්න!*\n\nඋදාහරණ:\n*.sub Deadpool*\n*.sub One Piece S01E01*\n*.sub One Piece S02E01*\n*.sub Avatar S02E07*");
+            return reply("🇸🇮 *කරුණාකර Subtitle අවශ්‍ය චිත්‍රපටයේ හෝ Episode එකේ නම ලබා දෙන්න!*\n\nඋදාහරණ:\n*.sub Deadpool*\n*.sub One Piece S01E01*\n*.sub Main Ladega*\n*.sub Avatar S02E07*");
         }
 
         await conn.sendPresenceUpdate('composing', from);
-        await reply(`⏳ *"${q.trim()}" සඳහා සිංහල උපසිරැසි (Sinhala Subtitle) සකසමින් පවතී... (TG Cloud)*`);
+        await reply(`⏳ *"${q.trim()}" සඳහා උපසිරැසි (Subtitles) සකසමින් පවතී... (TG Cloud)*`);
 
         const subData = await fetchSinhalaSubtitle(q.trim());
 
@@ -1691,19 +1893,24 @@ cmd({
                 );
             }
 
-            return reply(`❌ *"${q.trim()}" සඳහා Sinhala Subtitle සොයාගත නොහැකි විය. කරුණාකර නම නිවැරදිව පරීක්ෂා කරන්න.*`);
+            return reply(`❌ *"${q.trim()}" සඳහා Subtitle සොයාගත නොහැකි විය. කරුණාකර නම නිවැරදිව පරීක්ෂා කරන්න.*`);
         }
 
         const sizeKb = (subData.fileSize / 1024).toFixed(1);
+        const langFlag = subData.isSinhala ? '🇱🇰' : '🌐';
+        const langLabel = subData.language || 'Sinhala';
+        const mime = subData.mimetype || (subData.fileName.endsWith('.srt') ? 'text/plain' : 'application/zip');
 
         await conn.sendMessage(from, {
             document: subData.buffer,
-            mimetype: 'application/zip',
+            mimetype: mime,
             fileName: subData.fileName,
             caption: `👑 *${subData.title}* 👑\n\n` +
-                     `🇱🇰 *Sinhala Subtitles Downloaded*\n` +
-                     `📦 *File:* ${subData.fileName} (${sizeKb} KB)\n\n` +
-                     `_Downloaded via ＤＭＣ™ (TG Cloud Subtitles)_`
+                     `${langFlag} *${langLabel} Subtitles Downloaded*\n` +
+                     `📦 *File:* ${subData.fileName} (${sizeKb} KB)\n` +
+                     `⚡ *Engine:* TG Cloud (Universal Subtitles)\n` +
+                     `🌐 *Source:* ${subData.source || 'TG Cloud'}\n\n` +
+                     `_Downloaded via ＤＭＣ™ (TG Engine)_`
         }, { quoted: mek });
 
     } catch (err) {
@@ -1745,7 +1952,7 @@ cmd({
         if (isYouTube) {
             const tapVideo = botNum ? createOneTapLink(botNum, `.dlfilm ${selected.link}`) : '';
             const tapMp3 = botNum ? createOneTapLink(botNum, `.mp3 ${selected.link}`) : '';
-            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${selected.cleanTitle || selected.title}`) : '';
+            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${cleanMovieTitle(selected.cleanTitle || selected.title)}`) : '';
 
             let responseMsg = `👑 *${selected.title}* 👑\n` +
                               `🌐 *Source:* ${selected.source}\n` +
@@ -1762,7 +1969,7 @@ cmd({
             return await conn.sendMessage(from, { text: responseMsg }, { quoted: mek });
         }
 
-        const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${selected.title}`) : '';
+        const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${cleanMovieTitle(selected.title)}`) : '';
 
         let serversText = "";
         if (selected.link && selected.link.includes('sinhalasub.lk')) {
