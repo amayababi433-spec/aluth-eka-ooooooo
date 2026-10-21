@@ -35,6 +35,19 @@ function cleanTitleForDisplay(rawTitle) {
         .trim();
 }
 
+// Helper: Sanitize search query for robust tolerance against typos and symbols
+function sanitizeSearchQuery(raw) {
+    if (!raw) return "";
+    return raw
+        .replace(/[\(\)\[\]\{\}<>]/g, ' ')
+        .replace(/[!?,;:@#$%^&*+=~`]/g, ' ')
+        .replace(/\b(?:19|20)\d{2}\b/g, '')
+        .replace(/\b(?:season|series|s)\s*\d+/gi, '')
+        .replace(/\b(?:episode|ep)\s*\d+/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // ─────────────────────────────────────────────────────────────
 // 1. SINHALA SUBTITLE EXTRACTOR (Baiscope Live Redeem Engine)
 // ─────────────────────────────────────────────────────────────
@@ -53,9 +66,9 @@ async function fetchSinhalaSubtitle(query) {
             .replace(/s\d+\s*e\d+/gi, '')
             .replace(/s\d+/gi, '')
             .replace(/ep\d+/gi, '')
-            .trim();
+            .trim() || sanitizeSearchQuery(query);
 
-        let searchUrl = `https://www.baiscope.lk/?s=${encodeURIComponent(query)}`;
+        let searchUrl = `https://www.baiscope.lk/search?q=${encodeURIComponent(query)}`;
         let searchRes = await axios.get(searchUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -75,10 +88,10 @@ async function fetchSinhalaSubtitle(query) {
             }
         });
 
-        // If 0 articles and baseTitle is different, retry with baseTitle
+        // If 0 articles, retry with sanitized baseTitle
         if (posts.length === 0 && baseTitle && baseTitle.toLowerCase() !== query.toLowerCase()) {
             try {
-                const r2 = await axios.get(`https://www.baiscope.lk/?s=${encodeURIComponent(baseTitle)}`, {
+                const r2 = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(baseTitle)}`, {
                     headers: { 'User-Agent': 'Mozilla/5.0' },
                     timeout: 10000
                 });
@@ -373,43 +386,96 @@ async function formatEpisodeServers(serverLinks, botNum) {
 // ─────────────────────────────────────────────────────────────
 async function getLiveSeriesData(query) {
     try {
-        // Parse season filter if user wrote "season 2", "s2", etc.
         const sMatch = query.match(/season\s*(\d+)/i) || query.match(/s(\d+)/i);
         const filterSeason = sMatch ? parseInt(sMatch[1], 10) : null;
 
-        // Clean query to find the show
-        let cleanQuery = query
+        // Strip season and episode parts
+        let baseQuery = query
             .replace(/season\s*\d+/gi, '')
             .replace(/s\d+/gi, '')
             .replace(/(?:ep|episode)\s*\d+/gi, '')
             .trim();
 
-        if (!cleanQuery) cleanQuery = query.trim();
+        if (!baseQuery) baseQuery = query.trim();
 
-        // 1. Search for TV Show on Sinhalasub
-        const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(cleanQuery)}`;
-        const searchRes = await axios.get(searchUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-            timeout: 10000
-        });
-        const $ = cheerio.load(searchRes.data);
+        // Tier 1: base query
+        // Tier 2: sanitized query (no years, parens, symbols, e.g. "The Manipulated (2025))" -> "The Manipulated")
+        const sanitized = sanitizeSearchQuery(baseQuery);
+        // Tier 3: core words (words > 3 chars, e.g. "Manipulated")
+        const coreWords = sanitized.split(/\s+/).filter(w => w.length > 3).join(' ');
+
+        const searchTiers = [baseQuery, sanitized, coreWords].filter((q, idx, arr) => q && q.length >= 2 && arr.indexOf(q) === idx);
 
         let showUrl = null;
         let showTitle = null;
 
-        $('a[href*="/tvshows/"]').each((i, el) => {
-            const h = $(el).attr('href');
-            const t = $(el).text().trim() || $(el).attr('title') || '';
-            // Make sure it's a specific show page, not category /tvshows/ or language page
-            if (h && !showUrl && !h.endsWith('/tvshows/') && !h.includes('/tv-lanuage/')) {
-                showUrl = h;
-                showTitle = t;
+        // Cascading search on Sinhalasub
+        for (const term of searchTiers) {
+            try {
+                const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(term)}`;
+                const searchRes = await axios.get(searchUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    timeout: 8000
+                });
+                const $ = cheerio.load(searchRes.data);
+
+                $('a[href*="/tvshows/"]').each((i, el) => {
+                    const h = $(el).attr('href') || '';
+                    const t = $(el).text().replace(/\s+/g, ' ').trim() || $(el).attr('title') || '';
+                    if (h && !showUrl && !h.endsWith('/tvshows/') && !h.includes('/tv-lanuage/')) {
+                        showUrl = h;
+                        showTitle = t;
+                    }
+                });
+
+                if (showUrl) break;
+            } catch (err) {}
+        }
+
+        // If not found in TV shows, check if it's a standalone movie on Sinhalasub
+        if (!showUrl) {
+            for (const term of searchTiers) {
+                try {
+                    const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(term)}`;
+                    const searchRes = await axios.get(searchUrl, {
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                        timeout: 8000
+                    });
+                    const $ = cheerio.load(searchRes.data);
+
+                    $('a[href*="/movies/"]').each((i, el) => {
+                        const h = $(el).attr('href') || '';
+                        const t = $(el).text().replace(/\s+/g, ' ').trim() || $(el).attr('title') || '';
+                        if (h && !showUrl && !h.endsWith('/movies/') && !h.includes('/movie-lanuage/')) {
+                            showUrl = h;
+                            showTitle = t;
+                        }
+                    });
+
+                    if (showUrl) {
+                        const movieTitle = showTitle ? cleanTitleForDisplay(showTitle) : (sanitized || baseQuery);
+                        return {
+                            title: movieTitle,
+                            cleanName: sanitized || baseQuery,
+                            filterSeason: 1,
+                            showUrl,
+                            totalEpisodes: 1,
+                            isMovie: true,
+                            episodes: [{
+                                season: 1,
+                                episode: 1,
+                                title: `${movieTitle} (Full Movie)`,
+                                link: showUrl
+                            }]
+                        };
+                    }
+                } catch (err) {}
             }
-        });
+        }
 
         if (!showUrl) {
-            // Fallback: search Baiscope for TV episodes
-            return await getBaiscopeLiveSeries(cleanQuery, filterSeason);
+            // Fallback: search Baiscope for TV episodes using modern /search?q=
+            return await getBaiscopeLiveSeries(sanitized || baseQuery, filterSeason);
         }
 
         // 2. Fetch the live TV show page and extract ALL seasons and episodes dynamically
@@ -418,7 +484,7 @@ async function getLiveSeriesData(query) {
             timeout: 10000
         });
         const $p = cheerio.load(pageRes.data);
-        const seriesTitle = showTitle ? cleanTitleForDisplay(showTitle) : (cleanQuery || 'TV Series');
+        const seriesTitle = showTitle ? cleanTitleForDisplay(showTitle) : (sanitized || baseQuery);
         const episodes = [];
 
         $p('a[href*="/episodes/"]').each((i, el) => {
@@ -446,14 +512,13 @@ async function getLiveSeriesData(query) {
 
         episodes.sort((a, b) => a.season !== b.season ? a.season - b.season : a.episode - b.episode);
 
-        // Filter by season if requested
         let resultEpisodes = episodes;
         if (filterSeason) {
             const seasonFiltered = episodes.filter(e => e.season === filterSeason);
             if (seasonFiltered.length > 0) resultEpisodes = seasonFiltered;
         }
 
-        const cleanName = cleanQuery.replace(/\(\d{4}\)/g, '').trim() || cleanQuery;
+        const cleanName = sanitized || baseQuery;
 
         return {
             title: seriesTitle,
@@ -463,7 +528,6 @@ async function getLiveSeriesData(query) {
             totalEpisodes: resultEpisodes.length,
             episodes: resultEpisodes
         };
-
     } catch (e) {
         console.error("Live Series Scraper Error:", e.message);
         return null;
@@ -472,7 +536,7 @@ async function getLiveSeriesData(query) {
 
 async function getBaiscopeLiveSeries(cleanQuery, filterSeason = null) {
     try {
-        const searchUrl = `https://www.baiscope.lk/?s=${encodeURIComponent(cleanQuery)}`;
+        const searchUrl = `https://www.baiscope.lk/search?q=${encodeURIComponent(cleanQuery)}`;
         const res = await axios.get(searchUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             timeout: 10000
@@ -482,7 +546,7 @@ async function getBaiscopeLiveSeries(cleanQuery, filterSeason = null) {
         $('article').each((i, el) => {
             const h = $(el).find('a').attr('href') || '';
             const t = $(el).find('a').text().trim().replace(/\s+/g, ' ');
-            if (h.includes('/tv/') || t.toLowerCase().includes('s0') || t.toLowerCase().includes('season')) {
+            if (h.includes('/tv/') || t.toLowerCase().includes('s0') || t.toLowerCase().includes('season') || t.toLowerCase().includes('episode')) {
                 const sMatch = t.match(/\[S(\d+)\s*:\s*E(\d+)\]/i) || h.match(/s(\d+)-e(\d+)/i);
                 const season = sMatch ? parseInt(sMatch[1], 10) : 1;
                 const epNum = sMatch ? parseInt(sMatch[2], 10) : (i + 1);
@@ -520,15 +584,15 @@ async function getBaiscopeLiveSeries(cleanQuery, filterSeason = null) {
 async function searchMoviesMulti(query) {
     let results = [];
 
-    // Search Baiscope
+    // Search Baiscope using modern endpoint
     try {
-        const res = await axios.get(`https://www.baiscope.lk/?s=${encodeURIComponent(query)}`, {
+        const res = await axios.get(`https://www.baiscope.lk/search?q=${encodeURIComponent(query)}`, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             timeout: 10000
         });
         const $ = cheerio.load(res.data);
         $('article').each((i, el) => {
-            if (i < 3) {
+            if (i < 4) {
                 const title = $(el).find('a').text().trim().replace(/\s+/g, ' ');
                 const link = $(el).find('a').attr('href');
                 if (title && link) {
@@ -731,6 +795,40 @@ cmd({
 
         const displayHubHeader = isOnePiece ? "ONE PIECE (NETFLIX LIVE-ACTION) HUB" : `${seriesData.title.toUpperCase()} HUB`;
         const cmdShowName = seriesData.cleanName || seriesData.title || (isOnePiece ? "One Piece" : input);
+
+        if (seriesData.isMovie) {
+            // It's a standalone movie! Extract download servers directly and send movie card
+            let serverLinks = [];
+            try {
+                const mRes = await axios.get(seriesData.showUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                    timeout: 8000
+                });
+                const $m = cheerio.load(mRes.data);
+                $m('a').each((i, el) => {
+                    const h = $m(el).attr('href') || '';
+                    const t = $m(el).text().trim();
+                    if (h.includes('/links/') && (t.includes('DLServer') || t.includes('Telagram') || t.includes('Telegram') || t.includes('Server') || t.includes('Download') || t.includes('Pixeldrain'))) {
+                        if (!serverLinks.some(s => s.url === h)) {
+                            serverLinks.push({ name: t, url: h });
+                        }
+                    }
+                });
+            } catch (e) {}
+
+            const serversText = await formatEpisodeServers(serverLinks, botNum);
+            const oneTapSub = botNum ? createOneTapLink(botNum, `.sub ${cmdShowName}`) : '';
+
+            const movieCard = `👑 *${seriesData.title.toUpperCase()} (FULL MOVIE)* 👑\n` +
+                              `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
+                              serversText +
+                              `🔗 *Watch / Download Page:*\n${seriesData.showUrl}\n\n` +
+                              (oneTapSub ? `👉 🇸🇮 *1-Tap Sinhala Subtitle Link:*\n${oneTapSub}\n\n` : '') +
+                              `💡 _ඉහත Subtitle ලින්ක් එක Click කිරීමෙන් Sinhala Subtitle ලබා ගත හැක._\n\n` +
+                              `_👑 Powered by ＤＭＣ™ (TG Engine)_`;
+
+            return await conn.sendMessage(from, { text: movieCard }, { quoted: mek });
+        }
 
         let menuText = `👑 *${displayHubHeader}* 👑\n` +
                        `📺 *Title:* ${seriesData.title}\n` +
