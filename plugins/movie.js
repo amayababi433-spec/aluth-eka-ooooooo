@@ -438,7 +438,7 @@ async function fetchSinhalaSubtitle(rawQuery) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 1.5 AUTO-VERIFY PORTAL BYPASS & SERVER FORMATTER (Image 2 -> Image 3)
+// 1.5 AUTO-VERIFY PORTAL BYPASS & SERVER FORMATTER (Active Probe & Auto-Failover)
 // ─────────────────────────────────────────────────────────────
 async function bypassPortalAndResolve(portalUrl) {
     try {
@@ -458,10 +458,10 @@ async function bypassPortalAndResolve(portalUrl) {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                     'Referer': 'https://sinhalasub.lk/'
                 },
-                timeout: 10000
+                timeout: 8000
             });
 
-            // Auto-verify Image 2: bypass 3 decoy verification buttons & extract real stream
+            // Auto-verify: extract real stream URL from scripts or buttons
             const m = res.data.match(/var\s+zluFinalLink\s*=\s*['"]([^'"]+)['"]/i);
             if (m && m[1]) {
                 directUrl = m[1].trim();
@@ -483,54 +483,71 @@ async function bypassPortalAndResolve(portalUrl) {
             directUrl = `https://pixeldrain.com/api/file/${pdId}?download`;
         }
 
+        // Active Stream Probe Verification (Guarantees HTTP 200/206 - No 503 / 404 / dead CDNs)
+        let streamVerified = false;
+        try {
+            const probeRes = await axios.get(directUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Referer': 'https://sinhalasub.lk/',
+                    'Range': 'bytes=0-1024'
+                },
+                timeout: 6000,
+                maxRedirects: 5
+            });
+
+            if (probeRes.status === 200 || probeRes.status === 206) {
+                streamVerified = true;
+                if (probeRes.headers['content-type'] && !probeRes.headers['content-type'].includes('html')) {
+                    contentType = probeRes.headers['content-type'];
+                }
+                const crange = probeRes.headers['content-range'];
+                if (crange) {
+                    const matchLen = crange.match(/\/(\d+)/);
+                    if (matchLen && matchLen[1]) {
+                        sizeBytes = parseInt(matchLen[1], 10);
+                        sizeMb = sizeBytes / (1024 * 1024);
+                    }
+                }
+                if (!sizeBytes && probeRes.headers['content-length']) {
+                    sizeBytes = parseInt(probeRes.headers['content-length'], 10);
+                    sizeMb = sizeBytes / (1024 * 1024);
+                }
+
+                const disp = probeRes.headers['content-disposition'];
+                if (disp) {
+                    const fnMatch = disp.match(/filename\*?=['"]?(?:UTF-8'')?([^'";\n]+)['"]?/i);
+                    if (fnMatch && fnMatch[1]) {
+                        fileName = decodeURIComponent(fnMatch[1].replace(/['"]/g, '').trim());
+                    }
+                }
+            }
+        } catch (probeErr) {
+            streamVerified = false;
+        }
+
+        if (!streamVerified) {
+            return {
+                success: false,
+                error: `Stream server returned error or is offline (e.g. 503 / 404)`
+            };
+        }
+
         if (directUrl.includes('1080p') || directUrl.toLowerCase().includes('1080')) quality = '1080p FHD';
         else if (directUrl.includes('720p') || directUrl.toLowerCase().includes('720')) quality = '720p HD';
         else if (directUrl.includes('480p') || directUrl.toLowerCase().includes('480')) quality = '480p SD';
 
-        try {
-            const head = await axios.head(directUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                    'Referer': 'https://sinhalasub.lk/'
-                },
-                timeout: 5000
-            });
-
-            if (head.headers['content-type']) {
-                contentType = head.headers['content-type'];
+        if (sizeMb > 0) {
+            if (sizeMb >= 1024) {
+                sizeFormatted = (sizeMb / 1024).toFixed(2) + ' GB';
+            } else {
+                sizeFormatted = sizeMb.toFixed(1) + ' MB';
             }
-
-            const bytes = parseInt(head.headers['content-length'] || '0', 10);
-            if (bytes > 0) {
-                sizeBytes = bytes;
-                sizeMb = bytes / (1024 * 1024);
-                if (sizeMb >= 1024) {
-                    sizeFormatted = (sizeMb / 1024).toFixed(2) + ' GB';
-                } else {
-                    sizeFormatted = sizeMb.toFixed(1) + ' MB';
-                }
-
-                if (quality === 'HD') {
-                    if (sizeMb > 1100) quality = '1080p FHD';
-                    else if (sizeMb > 500) quality = '720p HD';
-                    else quality = '480p SD';
-                }
-            }
-
-            const disp = head.headers['content-disposition'];
-            if (disp) {
-                const fnMatch = disp.match(/filename\*?=['"]?(?:UTF-8'')?([^'";\n]+)['"]?/i);
-                if (fnMatch && fnMatch[1]) {
-                    fileName = decodeURIComponent(fnMatch[1].replace(/['"]/g, '').trim());
-                }
-            }
-        } catch (e) {}
-
-        if (sizeMb === 0) {
-            if (quality === '1080p FHD' || directUrl.toLowerCase().includes('1080')) {
+        } else {
+            if (quality === '1080p FHD') {
                 sizeMb = 1250;
                 sizeFormatted = '1.25 GB (HD)';
-            } else if (quality === '720p HD' || directUrl.toLowerCase().includes('720')) {
+            } else if (quality === '720p HD') {
                 sizeMb = 750;
                 sizeFormatted = '750 MB (HD)';
             } else {
@@ -635,9 +652,9 @@ async function extractServersFromPage(pageUrl) {
             )) {
                 if (!servers.some(s => s.url === h)) {
                     let priority = 10;
-                    if (t.includes('DLServer-01') || t.includes('DLServer 01')) priority = 1;
-                    else if (t.includes('Pixeldrain')) priority = 2;
-                    else if (t.includes('DLServer-02')) priority = 3;
+                    if (t.includes('Pixeldrain')) priority = 1;
+                    else if (t.includes('DLServer-02') || t.includes('DLServer 02')) priority = 2;
+                    else if (t.includes('DLServer-01') || t.includes('DLServer 01')) priority = 3;
                     else if (t.includes('720p')) priority = 4;
                     else if (t.includes('1080p')) priority = 5;
 
@@ -656,18 +673,36 @@ async function extractServersFromPage(pageUrl) {
 async function autoPickWorkingServer(servers) {
     if (!servers || servers.length === 0) return null;
 
+    const workingPool = [];
+
     for (const srv of servers) {
         try {
             const resolved = await bypassPortalAndResolve(srv.url);
             if (resolved.success && resolved.directUrl) {
-                return {
+                workingPool.push({
                     serverName: srv.name,
                     ...resolved
-                };
+                });
+                if (workingPool.length >= 3) break;
             }
         } catch (e) {}
     }
-    return null;
+
+    if (workingPool.length === 0) return null;
+
+    // Best quality server for High-Speed Direct URL
+    const bestQuality = workingPool[0];
+
+    // Dedicated WhatsApp server: must be <= 2040 MB (fits WhatsApp 2GB document limit)
+    const waCandidates = workingPool.filter(s => s.sizeMb <= 2040);
+    const bestWhatsApp = waCandidates.length > 0 ? waCandidates[0] : null;
+
+    return {
+        ...bestQuality,
+        whatsappStream: bestWhatsApp || bestQuality,
+        exceedsWhatsAppLimit: !bestWhatsApp && bestQuality.sizeMb > 2040,
+        allWorkingServers: workingPool
+    };
 }
 
 // Helper: Extract accurate file size and formatted string from YouTube Media Data
@@ -1666,34 +1701,63 @@ cmd({
         // 2. Anti-Ban human presence simulation
         await DownloadGuard.simulatePresenceSafely(conn, from, 'video');
 
-        // 3. Prepare and Send WhatsApp Document (Image 1 Format)
-        try {
-            let docPayload = { url: resolved.directUrl };
-            if (resolved.directUrl && resolved.directUrl.includes('trycloudflare.com')) {
-                const streamRes = await axios.get(resolved.directUrl, {
-                    headers: {
-                        'Bypass-Tunnel-Reminder': 'true',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                    },
-                    responseType: 'stream',
-                    timeout: 300000
-                });
-                docPayload = { stream: streamRes.data };
+        // 3. Prepare and Send WhatsApp Document (Image 1 Format) with Auto-Failover
+        const waStream = resolved.whatsappStream || resolved;
+
+        if (resolved.exceedsWhatsAppLimit) {
+            await reply(
+                `ℹ️ *සැලකිය යුතුයි:* මෙම චිත්‍රපටයේ ගොනු ප්‍රමාණය (*${resolved.sizeFormatted}*) WhatsApp මඟින් යැවිය හැකි උපරිම සීමාව වන 2 GB ඉක්මවා ඇත.\n\n` +
+                `👉 කරුණාකර ඉහත ලබාදී ඇති *Direct High-Speed Download URL* එක භාවිතා කර Browser / IDM මඟින් බාගත කරගන්න.\n\n` +
+                `_👑 Powered by ＤＭＣ™ (TG Engine)_`
+            );
+        } else {
+            let sentSuccessfully = false;
+            const streamsToTry = [
+                waStream,
+                ...(resolved.allWorkingServers || []).filter(s => s.directUrl !== waStream.directUrl && s.sizeMb <= 2040)
+            ];
+
+            for (const sTarget of streamsToTry) {
+                try {
+                    let docPayload = { url: sTarget.directUrl };
+                    try {
+                        const streamRes = await axios.get(sTarget.directUrl, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                                'Referer': 'https://sinhalasub.lk/',
+                                'Bypass-Tunnel-Reminder': 'true'
+                            },
+                            responseType: 'stream',
+                            timeout: 600000,
+                            maxRedirects: 5
+                        });
+                        docPayload = { stream: streamRes.data };
+                    } catch (streamErr) {
+                        docPayload = { url: sTarget.directUrl };
+                    }
+
+                    await conn.sendMessage(from, {
+                        document: docPayload,
+                        mimetype: sTarget.contentType || 'video/mp4',
+                        fileName: sTarget.fileName || resolved.fileName,
+                        caption: `👑 *${sTarget.fileName || resolved.fileName}* 👑\n\n` +
+                                 `📦 *Size:* ${sTarget.sizeFormatted}\n` +
+                                 `🎞️ *Quality:* ${sTarget.quality || 'HD'}\n` +
+                                 `⚡ *Engine:* TG Cloud (Auto Mind)\n` +
+                                 `🚀 *Server:* ${sTarget.serverName || 'Direct Stream'}\n\n` +
+                                 `_Downloaded via ＤＭＣ™ (TG Engine)_`
+                    }, { quoted: mek });
+
+                    sentSuccessfully = true;
+                    break;
+                } catch (sendErr) {
+                    console.error(`Stream Send Failed for ${sTarget.serverName}:`, sendErr.message);
+                }
             }
 
-            await conn.sendMessage(from, {
-                document: docPayload,
-                mimetype: resolved.contentType || 'video/mp4',
-                fileName: resolved.fileName,
-                caption: `👑 *${resolved.fileName}* 👑\n\n` +
-                         `📦 *Size:* ${resolved.sizeFormatted}\n` +
-                         `🎞️ *Quality:* ${resolved.quality || 'HD'}\n` +
-                         `⚡ *Engine:* TG Cloud (Auto Mind)\n\n` +
-                         `_Downloaded via ＤＭＣ™ (TG Engine)_`
-            }, { quoted: mek });
-        } catch (sendErr) {
-            console.error("Document Send Error:", sendErr.message);
-            await reply(`⚠️ *WhatsApp මඟින් Document එක එවීමේදී දෝෂයක් සිදු විය (${sendErr.message}).*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_මෙම ලින්ක් එකෙන් Browser එක හරහා ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
+            if (!sentSuccessfully) {
+                await reply(`⚠️ *WhatsApp මඟින් Document එක එවීමේදී දෝෂයක් සිදු විය.*\n\n🔗 *Direct High-Speed Download URL:*\n${resolved.directUrl}\n\n_මෙම ලින්ක් එකෙන් Browser එක හරහා ක්ෂණිකව බාගත කරගත හැක._\n\n_👑 Powered by ＤＭＣ™ (TG Engine)_`);
+            }
         }
 
     } catch (err) {
