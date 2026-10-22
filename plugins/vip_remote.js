@@ -93,8 +93,13 @@ function generateVipToken(userNumber) {
 
 // Helper: Get base URL for Remote Link
 function getRemoteBaseUrl() {
+    if (global.CAPTURED_APP_URL) return global.CAPTURED_APP_URL.replace(/\/$/, '');
     if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
-    if (process.env.KOYEB_APP_NAME) return `https://${process.env.KOYEB_APP_NAME}.koyeb.app`;
+    if (process.env.KOYEB_PUBLIC_DOMAIN) {
+        let domain = process.env.KOYEB_PUBLIC_DOMAIN.trim().replace(/\/$/, '');
+        if (!domain.startsWith('http')) domain = 'https://' + domain;
+        return domain;
+    }
     if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '');
     return `http://localhost:${process.env.PORT || 8000}`;
 }

@@ -170,6 +170,12 @@ async function connectToWA() {
     lockCollection.findOne({ _id: 'download_routing' }).then(doc => {
         if (doc && doc.routing) global.DOWNLOAD_ROUTING = doc.routing;
     }).catch(() => {});
+    lockCollection.findOne({ _id: 'app_url' }).then(doc => {
+        if (doc && doc.url) {
+            global.CAPTURED_APP_URL = doc.url;
+            console.log('🌐 [WhatsApp Bot] Restored public app URL from DB:', global.CAPTURED_APP_URL);
+        }
+    }).catch(() => {});
     lockCollection.findOne({ _id: 'bot_toggles' }).then(doc => {
         if (doc) {
             if (typeof doc.autoVoice === 'boolean') global.AUTO_VOICE_ENABLED = doc.autoVoice;
