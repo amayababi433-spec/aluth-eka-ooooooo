@@ -12,13 +12,73 @@ const config = require('../config');
 
 const SESSION_SECRET = process.env.ADMIN_SECRET || 'dmc_admin_secret_787898_pasindu';
 
-// Helper: Check if sender is VIP or Owner
-function isVipUser(senderJid, isOwner) {
-    if (isOwner) return true;
-    const cleanNumber = (senderJid || '').split('@')[0].replace(/[^0-9]/g, '');
-    if (cleanNumber === '94717884174' || cleanNumber === (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '')) return true;
-    if (global.vipVideoUsersCache && global.vipVideoUsersCache.has(cleanNumber)) return true;
-    return false;
+// Helper: Safely extract clean international phone number without multi-device colon suffixes
+function extractCleanNumber(jid) {
+    if (!jid) return '';
+    // Strip JID domain and device identifier (:1, :0, etc.)
+    let raw = String(jid).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    if (raw.startsWith('0')) raw = '94' + raw.substring(1);
+    return raw;
+}
+
+// Helper: Check if sender is VIP or Owner (with Multi-Device, LID, Cache & MongoDB Direct Verification)
+async function isVipUser(senderJid, isOwner, conn, mek) {
+    if (isOwner) return { isVip: true, cleanNumber: '94717884174' };
+
+    const candidates = [
+        senderJid,
+        mek?.key?.participant,
+        mek?.key?.remoteJid,
+        mek?.participant
+    ].filter(Boolean);
+
+    let lastClean = '';
+
+    for (const jid of candidates) {
+        let clean = extractCleanNumber(jid);
+        if (clean) lastClean = clean;
+
+        // 1. Owner check
+        if (clean === '94717884174' || clean === (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '')) {
+            return { isVip: true, cleanNumber: clean };
+        }
+
+        // 2. In-Memory Cache check
+        if (global.vipVideoUsersCache) {
+            if (global.vipVideoUsersCache.has(clean) || global.vipVideoUsersCache.has('+' + clean) || global.vipVideoUsersCache.has('0' + clean.substring(2))) {
+                return { isVip: true, cleanNumber: clean };
+            }
+        }
+
+        // 3. Resolve LID to Real Phone Number if applicable
+        if (jid.includes('@lid') && conn?.signalRepository?.lidMapping?.getPNForLID) {
+            try {
+                const pn = await conn.signalRepository.lidMapping.getPNForLID(jid);
+                if (pn) {
+                    const pnClean = extractCleanNumber(pn);
+                    if (pnClean) {
+                        lastClean = pnClean;
+                        if (global.vipVideoUsersCache && (global.vipVideoUsersCache.has(pnClean) || global.vipVideoUsersCache.has('+' + pnClean))) {
+                            return { isVip: true, cleanNumber: pnClean };
+                        }
+                        if (typeof global.checkIsVipNumberFromDB === 'function' && await global.checkIsVipNumberFromDB(pnClean)) {
+                            return { isVip: true, cleanNumber: pnClean };
+                        }
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // 4. Direct MongoDB lookup fallback (100% real-time cross-instance reliability)
+        if (typeof global.checkIsVipNumberFromDB === 'function' && clean) {
+            const isVipDb = await global.checkIsVipNumberFromDB(clean);
+            if (isVipDb) {
+                return { isVip: true, cleanNumber: clean };
+            }
+        }
+    }
+
+    return { isVip: false, cleanNumber: lastClean || extractCleanNumber(senderJid) };
 }
 
 // Generate Secure VIP Remote Token
@@ -49,10 +109,14 @@ cmd({
 }, async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
         const senderJid = sender || mek.key.participant || from;
-        const cleanNumber = (senderJid || '').split('@')[0].replace(/[^0-9]/g, '');
+        
+        // 🔒 VIP Authorization Check with real-time multi-device & MongoDB lookup
+        const vipAuth = await isVipUser(senderJid, isOwner, conn, mek);
+        const cleanNumber = vipAuth.cleanNumber;
 
-        // 🔒 VIP Authorization Check
-        if (!isVipUser(senderJid, isOwner)) {
+        console.log(`👑 [VIP Remote] .xrd triggered by ${senderJid} (Normalized: ${cleanNumber}) => VIP: ${vipAuth.isVip}`);
+
+        if (!vipAuth.isVip) {
             return await reply(
                 "⛔ *ACCESS DENIED (VIP ONLY)* ⛔\n\n" +
                 "මෙම විශේෂිත Video Remote Controller එක ලබාගැනීමට ඔබට අවසර (VIP Access) නොමැත.\n\n" +
@@ -116,7 +180,9 @@ cmd({
 }, async (conn, mek, m, { from, sender, isOwner, args, reply }) => {
     try {
         const senderJid = sender || mek.key.participant || from;
-        if (!isVipUser(senderJid, isOwner)) {
+        const vipAuth = await isVipUser(senderJid, isOwner, conn, mek);
+
+        if (!vipAuth.isVip) {
             return await reply("⛔ *ACCESS DENIED:* ඔබට VIP Access නොමැත.");
         }
 
@@ -159,6 +225,7 @@ cmd({
 });
 
 module.exports = {
+    extractCleanNumber,
     isVipUser,
     generateVipToken
 };
