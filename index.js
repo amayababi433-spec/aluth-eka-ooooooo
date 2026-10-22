@@ -5,6 +5,8 @@ const DownloadGuard = require('./lib/downloadGuard');
 DownloadGuard.installProcessCrashGuard();
 
 global.blockedUsersCache = new Map();
+if (global.AUTO_VOICE_ENABLED === undefined) global.AUTO_VOICE_ENABLED = (process.env.AUTO_VOICE !== 'false');
+if (global.VERIFICATION_POLL_ENABLED === undefined) global.VERIFICATION_POLL_ENABLED = true;
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -163,9 +165,16 @@ async function connectToWA() {
     const now = Date.now();
     const LOCK_TIMEOUT = 18000; // 18 seconds
 
-    // Initial restoration of live download routing from MongoDB
+    // Initial restoration of live download routing & bot toggles from MongoDB
     lockCollection.findOne({ _id: 'download_routing' }).then(doc => {
         if (doc && doc.routing) global.DOWNLOAD_ROUTING = doc.routing;
+    }).catch(() => {});
+    lockCollection.findOne({ _id: 'bot_toggles' }).then(doc => {
+        if (doc) {
+            if (typeof doc.autoVoice === 'boolean') global.AUTO_VOICE_ENABLED = doc.autoVoice;
+            if (typeof doc.antiBotVerification === 'boolean') global.VERIFICATION_POLL_ENABLED = doc.antiBotVerification;
+            console.log('🛡️ [Bot Toggles Restored]:', { autoVoice: global.AUTO_VOICE_ENABLED, antiBotVerification: global.VERIFICATION_POLL_ENABLED });
+        }
     }).catch(() => {});
 
     try {

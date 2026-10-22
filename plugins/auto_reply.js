@@ -65,6 +65,7 @@ cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {
     try {
+        if (global.VERIFICATION_POLL_ENABLED === false) return;
         if (!body || typeof body !== 'string') return;
         if (isGroup || from?.endsWith('@g.us') || mek?.key?.fromMe) return;
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;

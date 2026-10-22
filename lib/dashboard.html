@@ -529,6 +529,102 @@
             color: #052e16;
         }
 
+        /* Custom iOS / Cyberpunk Glass Toggle Switch */
+        .bot-toggle-card {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            transition: all 0.25s ease;
+        }
+        .bot-toggle-card:hover {
+            border-color: rgba(6, 182, 212, 0.35);
+            background: rgba(15, 23, 42, 0.85);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        .bot-toggle-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            flex: 1;
+        }
+        .bot-toggle-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.25);
+        }
+        .toggle-switch-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .modern-switch {
+            position: relative;
+            display: inline-block;
+            width: 56px;
+            height: 30px;
+            cursor: pointer;
+        }
+        .modern-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .modern-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(239, 68, 68, 0.25);
+            border: 1.5px solid rgba(239, 68, 68, 0.4);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 30px;
+        }
+        .modern-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 2.5px;
+            background-color: #f87171;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        }
+        .modern-switch input:checked + .modern-slider {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(5, 150, 105, 0.5));
+            border-color: #10b981;
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.45);
+        }
+        .modern-switch input:checked + .modern-slider:before {
+            transform: translateX(26px);
+            background-color: #ffffff;
+            box-shadow: 0 0 10px #10b981;
+        }
+        .toggle-state-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.05em;
+            transition: color 0.2s ease;
+        }
+
         /* Commands Explorer (.menu) */
         .search-container {
             display: flex;
@@ -901,12 +997,83 @@
                     <button class="btn btn-ghost" onclick="setBotMode('private')">
                         🔒 Set PRIVATE Mode (Owner Only)
                     </button>
+                    <button class="btn btn-ghost" onclick="quickToggleFeature('autoVoice')" id="btnQuickAutoVoice">
+                        🎙️ Voices: <span id="btnQuickVoiceText" style="color: #4ade80; font-weight: 700;">ON</span>
+                    </button>
+                    <button class="btn btn-ghost" onclick="quickToggleFeature('antiBotVerification')" id="btnQuickVerification">
+                        📊 Verification Poll: <span id="btnQuickVerText" style="color: #4ade80; font-weight: 700;">ON</span>
+                    </button>
                     <button class="btn btn-ghost" onclick="reconnectBot()">
                         🔄 Reconnect WhatsApp
                     </button>
                     <button class="btn btn-ghost" onclick="switchTab('commands')">
                         📖 View All Commands (.menu)
                     </button>
+                </div>
+            </div>
+
+            <!-- BOT FEATURE TOGGLE SWITCHES (ALL VOICES & DMC VERIFICATION POLL) -->
+            <div class="glass-card" style="margin-bottom: 24px;">
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <div>
+                        <div class="section-title" style="display: flex; align-items: center; gap: 8px;">
+                            <span>🎛️ Bot Automation & Verification Switches</span>
+                            <span class="badge" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4; border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.72rem;">Live Toggles</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px;">
+                            සියලු Voice Notes සහ DMC Verification Poll (ඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද?) වෙන වෙනම Switch එකෙන් Disable හෝ Enable කරන්න.
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+                    <!-- Switch 1: All Voice Notes -->
+                    <div class="bot-toggle-card">
+                        <div class="bot-toggle-info">
+                            <div class="bot-toggle-icon" style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2)); border: 1px solid rgba(6, 182, 212, 0.35);">
+                                🎙️
+                            </div>
+                            <div>
+                                <div style="font-weight: 700; font-size: 0.95rem; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+                                    <span>All Voice Notes (Auto Voice)</span>
+                                </div>
+                                <div style="font-size: 0.76rem; color: var(--text-muted); line-height: 1.4;">
+                                    Sinhala / Singlish වචන සඳහා ස්වයංක්‍රීයව යන සියලු Voice Note audio clips යැවීම අක්‍රිය (Disable) හෝ සක්‍රිය (Enable) කරන්න.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="toggle-switch-wrapper">
+                            <label class="modern-switch" title="Click to Toggle All Voice Notes">
+                                <input type="checkbox" id="switchAutoVoice" onchange="toggleBotFeature('autoVoice', this.checked)">
+                                <span class="modern-slider"></span>
+                            </label>
+                            <span class="toggle-state-label" id="labelAutoVoice" style="color: #10b981;">ENABLED (ON)</span>
+                        </div>
+                    </div>
+
+                    <!-- Switch 2: DMC Verification Poll (Anti-Bot) -->
+                    <div class="bot-toggle-card">
+                        <div class="bot-toggle-info">
+                            <div class="bot-toggle-icon" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2)); border: 1px solid rgba(245, 158, 11, 0.35);">
+                                📊
+                            </div>
+                            <div>
+                                <div style="font-weight: 700; font-size: 0.95rem; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+                                    <span>DMC Verification Poll / Menu</span>
+                                </div>
+                                <div style="font-size: 0.76rem; color: var(--text-muted); line-height: 1.4;">
+                                    Chat කිරීමේදී එන "ඔබ Bot කෙනෙක්ද නැත්නම් Real කෙනෙක්ද? (0.RESET / 1.Real / 2.BOT)" Poll එක සහ Verification Menu එක අක්‍රිය (Disable) හෝ සක්‍රිය කරන්න.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="toggle-switch-wrapper">
+                            <label class="modern-switch" title="Click to Toggle DMC Verification Poll">
+                                <input type="checkbox" id="switchVerification" onchange="toggleBotFeature('antiBotVerification', this.checked)">
+                                <span class="modern-slider"></span>
+                            </label>
+                            <span class="toggle-state-label" id="labelVerification" style="color: #10b981;">ENABLED (ON)</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1082,6 +1249,53 @@
         <div id="tab-owner" class="tab-content" style="display: none;">
             <div class="owner-grid">
 
+                <!-- Bot Feature Switches (Owner Hub View) -->
+                <div class="glass-card" style="grid-column: 1 / -1; margin-bottom: 8px;">
+                    <div class="section-header" style="margin-bottom: 14px;">
+                        <div>
+                            <div class="section-title">
+                                🎛️ Feature Automation & Anti-Bot Verification
+                            </div>
+                            <span style="font-size: 0.78rem; color: var(--text-dim);">Live MongoDB Persisted Controls</span>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+                        <div class="bot-toggle-card">
+                            <div class="bot-toggle-info">
+                                <div class="bot-toggle-icon" style="background: rgba(6, 182, 212, 0.2); border: 1px solid rgba(6, 182, 212, 0.3);">🎙️</div>
+                                <div>
+                                    <div style="font-weight: 700; font-size: 0.9rem; color: #fff;">All Voice Notes (Auto Voice)</div>
+                                    <div style="font-size: 0.74rem; color: var(--text-dim);">Automated Sinhala/Singlish audio replies</div>
+                                </div>
+                            </div>
+                            <div class="toggle-switch-wrapper">
+                                <label class="modern-switch" title="Toggle Auto Voice">
+                                    <input type="checkbox" id="switchAutoVoiceHub" onchange="toggleBotFeature('autoVoice', this.checked)">
+                                    <span class="modern-slider"></span>
+                                </label>
+                                <span class="toggle-state-label" id="labelAutoVoiceHub" style="color: #10b981;">ENABLED (ON)</span>
+                            </div>
+                        </div>
+
+                        <div class="bot-toggle-card">
+                            <div class="bot-toggle-info">
+                                <div class="bot-toggle-icon" style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.3);">📊</div>
+                                <div>
+                                    <div style="font-weight: 700; font-size: 0.9rem; color: #fff;">DMC Verification Poll / Menu</div>
+                                    <div style="font-size: 0.74rem; color: var(--text-dim);">"ඔබ Bot කෙනෙක්ද Real කෙනෙක්ද" prompt</div>
+                                </div>
+                            </div>
+                            <div class="toggle-switch-wrapper">
+                                <label class="modern-switch" title="Toggle Verification Poll">
+                                    <input type="checkbox" id="switchVerificationHub" onchange="toggleBotFeature('antiBotVerification', this.checked)">
+                                    <span class="modern-slider"></span>
+                                </label>
+                                <span class="toggle-state-label" id="labelVerificationHub" style="color: #10b981;">ENABLED (ON)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 1. Send Direct WhatsApp Message -->
                 <div class="glass-card">
                     <div class="section-title" style="margin-bottom: 12px;">
@@ -1234,6 +1448,7 @@
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('appMain').style.display = 'block';
             startLivePolling();
+            fetchBotToggles();
             loadCommands();
             loadBlockedList();
             fetchDownloadRouting();
@@ -1378,6 +1593,12 @@
                 if (d.totalCommands) {
                     document.getElementById('tabCmdCount').innerText = d.totalCommands;
                     document.getElementById('countAll').innerText = d.totalCommands;
+                }
+
+                if (d.toggles) {
+                    botToggles.autoVoice = d.toggles.autoVoice !== false;
+                    botToggles.antiBotVerification = d.toggles.antiBotVerification !== false;
+                    renderBotToggles();
                 }
             } catch (e) {
                 console.log('Poll err:', e);
@@ -1796,6 +2017,111 @@
             } finally {
                 if (btn) btn.innerText = '🔄 Test Latency / Ping';
             }
+        }
+
+        // ============================================
+        // BOT FEATURE & VERIFICATION TOGGLE SWITCHES
+        // ============================================
+        let botToggles = { autoVoice: true, antiBotVerification: true };
+
+        async function fetchBotToggles() {
+            try {
+                const res = await fetch('/api/bot-toggles');
+                const data = await res.json();
+                if (data.success) {
+                    botToggles.autoVoice = data.autoVoice !== false;
+                    botToggles.antiBotVerification = data.antiBotVerification !== false;
+                    renderBotToggles();
+                }
+            } catch (e) {
+                console.log('Error fetching bot toggles:', e);
+            }
+        }
+
+        function renderBotToggles() {
+            // 1. Auto Voice Switches (Overview, Owner Hub, and Quick Buttons)
+            const swVoice = document.getElementById('switchAutoVoice');
+            const lblVoice = document.getElementById('labelAutoVoice');
+            const swVoiceHub = document.getElementById('switchAutoVoiceHub');
+            const lblVoiceHub = document.getElementById('labelAutoVoiceHub');
+            const btnQuickVoiceText = document.getElementById('btnQuickVoiceText');
+
+            if (swVoice) swVoice.checked = botToggles.autoVoice;
+            if (swVoiceHub) swVoiceHub.checked = botToggles.autoVoice;
+            if (lblVoice) {
+                lblVoice.innerText = botToggles.autoVoice ? 'ENABLED (ON)' : 'DISABLED (OFF)';
+                lblVoice.style.color = botToggles.autoVoice ? '#10b981' : '#ef4444';
+            }
+            if (lblVoiceHub) {
+                lblVoiceHub.innerText = botToggles.autoVoice ? 'ON' : 'OFF';
+                lblVoiceHub.style.color = botToggles.autoVoice ? '#10b981' : '#ef4444';
+            }
+            if (btnQuickVoiceText) {
+                btnQuickVoiceText.innerText = botToggles.autoVoice ? 'ON' : 'OFF';
+                btnQuickVoiceText.style.color = botToggles.autoVoice ? '#4ade80' : '#f87171';
+            }
+
+            // 2. Anti-Bot Verification Poll Switches (Overview, Owner Hub, and Quick Buttons)
+            const swVer = document.getElementById('switchVerification');
+            const lblVer = document.getElementById('labelVerification');
+            const swVerHub = document.getElementById('switchVerificationHub');
+            const lblVerHub = document.getElementById('labelVerificationHub');
+            const btnQuickVerText = document.getElementById('btnQuickVerText');
+
+            if (swVer) swVer.checked = botToggles.antiBotVerification;
+            if (swVerHub) swVerHub.checked = botToggles.antiBotVerification;
+            if (lblVer) {
+                lblVer.innerText = botToggles.antiBotVerification ? 'ENABLED (ON)' : 'DISABLED (OFF)';
+                lblVer.style.color = botToggles.antiBotVerification ? '#10b981' : '#ef4444';
+            }
+            if (lblVerHub) {
+                lblVerHub.innerText = botToggles.antiBotVerification ? 'ON' : 'OFF';
+                lblVerHub.style.color = botToggles.antiBotVerification ? '#10b981' : '#ef4444';
+            }
+            if (btnQuickVerText) {
+                btnQuickVerText.innerText = botToggles.antiBotVerification ? 'ON' : 'OFF';
+                btnQuickVerText.style.color = botToggles.antiBotVerification ? '#4ade80' : '#f87171';
+            }
+        }
+
+        async function toggleBotFeature(feature, isChecked) {
+            // Optimistic instant visual update
+            botToggles[feature] = Boolean(isChecked);
+            renderBotToggles();
+
+            try {
+                const res = await fetch('/api/bot-toggles', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        feature,
+                        enabled: Boolean(isChecked)
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const featureName = feature === 'autoVoice' ? '🎙️ All Voice Notes' : '📊 DMC Verification Poll';
+                    const stateName = isChecked ? 'ENABLED (Active)' : 'DISABLED (Off)';
+                    showToast(`${featureName} set to ${stateName}!`, 'success');
+                    if (typeof data.autoVoice === 'boolean') botToggles.autoVoice = data.autoVoice;
+                    if (typeof data.antiBotVerification === 'boolean') botToggles.antiBotVerification = data.antiBotVerification;
+                    renderBotToggles();
+                } else {
+                    showToast(data.error || 'Failed to update switch', 'error');
+                    // Revert on error
+                    botToggles[feature] = !isChecked;
+                    renderBotToggles();
+                }
+            } catch (err) {
+                showToast('Network error while saving switch', 'error');
+                botToggles[feature] = !isChecked;
+                renderBotToggles();
+            }
+        }
+
+        function quickToggleFeature(feature) {
+            const current = botToggles[feature] !== false;
+            toggleBotFeature(feature, !current);
         }
     </script>
 </body>

@@ -91,6 +91,7 @@ cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, sender }) => {
     try {
+        if (global.AUTO_VOICE_ENABLED === false) return;
         if (sender && typeof sender === 'string' && sender.includes('94777297616')) return;
 
         
