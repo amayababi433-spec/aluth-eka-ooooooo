@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DMC™ VIP Video Remote Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #030712;
+            --bg-card: rgba(15, 23, 42, 0.75);
+            --border-glow: rgba(56, 189, 248, 0.25);
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-red: #ef4444;
+            --accent-red-glow: rgba(239, 68, 68, 0.45);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.15), transparent 45%),
+                radial-gradient(circle at 50% 100%, rgba(239, 68, 68, 0.12), transparent 40%),
+                linear-gradient(to bottom, #030712, #0b1120);
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 12px;
+            overflow-x: hidden;
+        }
+
+        .remote-app {
+            width: 100%;
+            max-width: 440px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            padding-bottom: 24px;
+        }
+
+        /* Top Header */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+        }
+
+        .vip-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #fbbf24;
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+        }
+
+        .user-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.74rem;
+            color: var(--text-muted);
+        }
+
+        /* Search & Fast Jump */
+        .search-wrap {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-wrap input {
+            width: 100%;
+            padding: 10px 14px 10px 38px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: #fff;
+            font-size: 0.82rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-wrap input:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
+        }
+
+        .search-wrap .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.9rem;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* TV Screen Frame */
+        .tv-screen-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.6), 0 0 20px rgba(6, 182, 212, 0.12);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tv-screen-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.8), transparent);
+        }
+
+        /* Folder Category Header */
+        .folder-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 6px;
+        }
+
+        .folder-title-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 0.88rem;
+            color: #38bdf8;
+        }
+
+        .folder-counter {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+
+        /* Live Video Canvas / Thumbnail Viewport */
+        .screen-viewport {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 12px;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .screen-viewport img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.25s ease, opacity 0.2s ease;
+        }
+
+        .screen-viewport.sliding-next img {
+            transform: translateX(-40px);
+            opacity: 0.3;
+        }
+
+        .screen-viewport.sliding-prev img {
+            transform: translateX(40px);
+            opacity: 0.3;
+        }
+
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        .live-tv-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(239, 68, 68, 0.85);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+        }
+
+        .code-pill {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #38bdf8;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
+        .video-meta-bar {
+            padding: 6px 4px 2px;
+        }
+
+        .video-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 6px;
+        }
+
+        .video-badges {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .meta-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.04);
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* -------------------------------------------------- */
+        /* D-PAD REMOTE CONTROLLER (Exact Drawing match) */
+        /* -------------------------------------------------- */
+        .controller-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .dpad-cross {
+            width: 270px;
+            height: 270px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Directional Rectangles (Black Rectangles matching image) */
+        .dpad-btn {
+            position: absolute;
+            background: #0f172a;
+            border: 2px solid #334155;
+            color: #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+        }
+
+        .dpad-btn:active {
+            transform: scale(0.94);
+            background: #1e293b;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.4);
+        }
+
+        /* UP BUTTON (Top Rectangle) */
+        .btn-up {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 86px;
+            height: 58px;
+        }
+        .btn-up:active {
+            transform: translateX(-50%) scale(0.94);
+        }
+
+        /* DOWN BUTTON (Bottom Rectangle) */
+        .btn-down {
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 86px;
+            height: 58px;
+        }
+        .btn-down:active {
+            transform: translateX(-50%) scale(0.94);
+        }
+
+        /* LEFT BUTTON (Left Rectangle) */
+        .btn-left {
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 68px;
+            height: 76px;
+        }
+        .btn-left:active {
+            transform: translateY(-50%) scale(0.94);
+        }
+
+        /* RIGHT BUTTON (Right Rectangle) */
+        .btn-right {
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 68px;
+            height: 76px;
+        }
+        .btn-right:active {
+            transform: translateY(-50%) scale(0.94);
+        }
+
+        .dpad-arrow {
+            font-size: 1.1rem;
+            line-height: 1;
+            margin-bottom: 2px;
+        }
+
+        .dpad-label {
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        /* CENTER RED OVAL BUTTON (Exact Drawing match) */
+        .btn-center-ok {
+            position: absolute;
+            width: 84px;
+            height: 54px;
+            border-radius: 36px; /* Oval shape */
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.3));
+            border: 3px solid var(--accent-red);
+            box-shadow: 0 0 20px var(--accent-red-glow), inset 0 0 10px rgba(239, 68, 68, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .btn-center-ok:active {
+            transform: scale(0.92);
+            background: var(--accent-red);
+            box-shadow: 0 0 35px var(--accent-red);
+        }
+
+        .btn-center-ok .ok-text {
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 0.76rem;
+            letter-spacing: 0.08em;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
+
+        .btn-center-ok .ok-sub {
+            color: #fca5a5;
+            font-size: 0.55rem;
+            font-weight: 700;
+        }
+
+        /* Controller Help Tooltip */
+        .controller-instructions {
+            margin-top: 14px;
+            font-size: 0.74rem;
+            color: var(--text-dim);
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .controller-instructions b {
+            color: var(--accent-cyan);
+        }
+
+        /* Floating Toast / Action Modal */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            padding: 12px 22px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid var(--accent-cyan);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(6, 182, 212, 0.3);
+            border-radius: 16px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #fff;
+            z-index: 100;
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-overlay">
+        <div class="spinner"></div>
+        <div style="font-weight: 700; font-size: 0.9rem; color: #38bdf8;">Loading VIP Video Controller...</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim);">Connecting to DMC Baileys Engine</div>
+    </div>
+
+    <!-- Main Remote App Wrapper -->
+    <div class="remote-app" id="remoteApp" style="display: none;">
+
+        <!-- Top Status Bar -->
+        <div class="top-bar">
+            <div class="vip-badge">
+                <span>👑 VIP ACCESS</span>
+            </div>
+            <div class="user-tag" id="userPhoneTag">+94xxxxxxxxx</div>
+        </div>
+
+        <!-- Fast Search / Jump by Digits -->
+        <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Search title or digits (e.g. 05)..." oninput="handleSearch(this.value)">
+        </div>
+
+        <!-- Live TV Screen -->
+        <div class="tv-screen-card">
+            <!-- Folder Indicator -->
+            <div class="folder-header">
+                <div class="folder-title-pill">
+                    <span>📁</span>
+                    <span id="folderTitle">All Videos</span>
+                </div>
+                <div class="folder-counter" id="folderCounter">Folder 1/1</div>
+            </div>
+
+            <!-- Viewport Screen -->
+            <div class="screen-viewport" id="screenViewport">
+                <div class="live-tv-badge">LIVE TV</div>
+                <div class="code-pill" id="codePill">#01</div>
+                <img id="videoThumbnail" src="" alt="Thumbnail preview">
+                <div class="scanlines"></div>
+            </div>
+
+            <!-- Video Metadata -->
+            <div class="video-meta-bar">
+                <div class="video-title" id="videoTitle">Loading Title...</div>
+                <div class="video-badges">
+                    <span class="meta-tag" id="videoSize">💾 0 MB</span>
+                    <span class="meta-tag" id="videoDuration">⏱️ 0m</span>
+                    <span class="meta-tag" id="videoIndexCounter">🎬 1 of 1</span>
+                    <span class="meta-tag" id="videoQuality" style="color: #34d399;">1080p Full HD</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- The D-Pad Remote Controller Panel (Matches Image) -->
+        <div class="controller-panel">
+            <div class="dpad-cross">
+                <!-- UP: Switch to Previous Folder -->
+                <button class="dpad-btn btn-up" onclick="navFolder(-1)" title="Previous Folder">
+                    <span class="dpad-arrow">▲</span>
+                    <span class="dpad-label">Folder</span>
+                </button>
+
+                <!-- DOWN: Switch to Next Folder -->
+                <button class="dpad-btn btn-down" onclick="navFolder(1)" title="Next Folder">
+                    <span class="dpad-arrow">▼</span>
+                    <span class="dpad-label">Folder</span>
+                </button>
+
+                <!-- LEFT: Previous Video -->
+                <button class="dpad-btn btn-left" onclick="navVideo(-1)" title="Previous Video">
+                    <span class="dpad-arrow">◀</span>
+                    <span class="dpad-label">Prev</span>
+                </button>
+
+                <!-- RIGHT: Next Video -->
+                <button class="dpad-btn btn-right" onclick="navVideo(1)" title="Next Video">
+                    <span class="dpad-arrow">▶</span>
+                    <span class="dpad-label">Next</span>
+                </button>
+
+                <!-- CENTER RED OVAL BUTTON: Send to WhatsApp -->
+                <button class="btn-center-ok" onclick="dispatchCurrentVideo()" title="Send to WhatsApp">
+                    <span class="ok-text">SEND</span>
+                    <span class="ok-sub">WhatsApp</span>
+                </button>
+            </div>
+
+            <div class="controller-instructions">
+                <b>◀ / ▶</b> Videos පෙරළන්න &nbsp;•&nbsp; <b>▲ / ▼</b> Folders මාරු කරන්න<br>
+                තෝරාගත් Video එක WhatsApp එකට යැවීමට මැද <b>රතු Button (SEND)</b> එක ඔබන්න.
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast">
+        <span id="toastIcon">✨</span>
+        <span id="toastMsg">Video dispatched!</span>
+    </div>
+
+    <script>
+        // Parse Query Params
+        const urlParams = new URLSearchParams(window.location.search);
+        const authToken = urlParams.get('token');
+        const userPhone = urlParams.get('user') || 'VIP User';
+
+        let foldersData = [];
+        let currentFolderIdx = 0;
+        let currentVideoIdx = 0;
+        let isDispatching = false;
+
+        // Init
+        window.addEventListener('DOMContentLoaded', async () => {
+            document.getElementById('userPhoneTag').innerText = '+' + userPhone.replace(/[^0-9]/g, '');
+            await fetchCatalog();
+        });
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') { e.preventDefault(); navFolder(-1); }
+            if (e.key === 'ArrowDown') { e.preventDefault(); navFolder(1); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); navVideo(-1); }
+            if (e.key === 'ArrowRight') { e.preventDefault(); navVideo(1); }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dispatchCurrentVideo(); }
+        });
+
+        // Touch Swipe Gesture on Viewport
+        let touchStartX = 0;
+        const viewport = document.getElementById('screenViewport');
+        viewport.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, { passive: true });
+        viewport.addEventListener('touchend', (e) => {
+            const touchEndX = e.changedTouches[0].screenX;
+            if (touchEndX < touchStartX - 40) navVideo(1); // Swipe left -> Next
+            if (touchEndX > touchStartX + 40) navVideo(-1); // Swipe right -> Prev
+        }, { passive: true });
+
+        // Fetch VIP Video Catalog
+        async function fetchCatalog() {
+            try {
+                const res = await fetch(`/api/vip-remote/catalog?token=${encodeURIComponent(authToken)}&user=${encodeURIComponent(userPhone)}`);
+                const data = await res.json();
+
+                if (!data.success || !data.folders || data.folders.length === 0) {
+                    showError(data.error || 'No VIP videos found or access expired.');
+                    return;
+                }
+
+                foldersData = data.folders;
+                currentFolderIdx = 0;
+                currentVideoIdx = 0;
+
+                document.getElementById('loadingScreen').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('loadingScreen').style.display = 'none';
+                    document.getElementById('remoteApp').style.display = 'flex';
+                }, 300);
+
+                renderState();
+            } catch (err) {
+                showError('Network error connecting to Bot Server.');
+            }
+        }
+
+        function renderState() {
+            if (!foldersData.length) return;
+
+            const folder = foldersData[currentFolderIdx];
+            const videos = folder.videos || [];
+            if (!videos.length) return;
+
+            if (currentVideoIdx >= videos.length) currentVideoIdx = 0;
+            if (currentVideoIdx < 0) currentVideoIdx = videos.length - 1;
+
+            const video = videos[currentVideoIdx];
+
+            // Update Folder Info
+            document.getElementById('folderTitle').innerText = folder.name || 'General Videos';
+            document.getElementById('folderCounter').innerText = `Folder ${currentFolderIdx + 1}/${foldersData.length}`;
+
+            // Update Video Info
+            document.getElementById('videoTitle').innerText = video.title || video.fileName || 'Untitled Video';
+            document.getElementById('codePill').innerText = `#${video.code || (currentVideoIdx + 1)}`;
+            document.getElementById('videoSize').innerText = `💾 ${video.sizeFmt || '450 MB'}`;
+            document.getElementById('videoDuration').innerText = `⏱️ ${video.durationFmt || '42m'}`;
+            document.getElementById('videoIndexCounter').innerText = `🎬 ${currentVideoIdx + 1} of ${videos.length}`;
+            document.getElementById('videoQuality').innerText = video.quality || '1080p HD';
+
+            // Update Thumbnail
+            const thumbEl = document.getElementById('videoThumbnail');
+            thumbEl.src = video.thumbnailUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80';
+        }
+
+        // Navigate Folders (Up / Down)
+        function navFolder(delta) {
+            if (!foldersData.length) return;
+            currentFolderIdx += delta;
+            if (currentFolderIdx >= foldersData.length) currentFolderIdx = 0;
+            if (currentFolderIdx < 0) currentFolderIdx = foldersData.length - 1;
+            currentVideoIdx = 0; // reset video to first item
+
+            playBeep(440, 0.05);
+            renderState();
+        }
+
+        // Navigate Videos in current folder (Left / Right)
+        function navVideo(delta) {
+            if (!foldersData.length) return;
+            const videos = foldersData[currentFolderIdx].videos || [];
+            if (videos.length <= 1) return;
+
+            const vp = document.getElementById('screenViewport');
+            vp.classList.add(delta > 0 ? 'sliding-next' : 'sliding-prev');
+
+            setTimeout(() => {
+                currentVideoIdx += delta;
+                if (currentVideoIdx >= videos.length) currentVideoIdx = 0;
+                if (currentVideoIdx < 0) currentVideoIdx = videos.length - 1;
+                renderState();
+                vp.classList.remove('sliding-next', 'sliding-prev');
+            }, 120);
+
+            playBeep(580, 0.04);
+        }
+
+        // Fast Search by Digits or Title
+        function handleSearch(query) {
+            const q = query.trim().toLowerCase();
+            if (!q) return;
+
+            for (let fIdx = 0; fIdx < foldersData.length; fIdx++) {
+                const f = foldersData[fIdx];
+                for (let vIdx = 0; vIdx < f.videos.length; vIdx++) {
+                    const v = f.videos[vIdx];
+                    const code = String(v.code || '').toLowerCase();
+                    const title = String(v.title || '').toLowerCase();
+                    if (code === q || title.includes(q)) {
+                        currentFolderIdx = fIdx;
+                        currentVideoIdx = vIdx;
+                        renderState();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Dispatch Selected Video to WhatsApp Chat (Center Red Button)
+        async function dispatchCurrentVideo() {
+            if (isDispatching) return;
+            if (!foldersData.length) return;
+
+            const video = foldersData[currentFolderIdx].videos[currentVideoIdx];
+            if (!video) return;
+
+            isDispatching = true;
+            playBeep(880, 0.1);
+            showToast(`🚀 Sending "${video.title}" to WhatsApp...`, 'info');
+
+            try {
+                const res = await fetch('/api/vip-remote/dispatch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: authToken,
+                        user: userPhone,
+                        videoId: video.id || video._id,
+                        folderName: foldersData[currentFolderIdx].name
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showToast('✅ Dispatched! Check your WhatsApp chat.', 'success');
+                } else {
+                    showToast('⚠️ ' + (data.error || 'Failed to dispatch video.'), 'error');
+                }
+            } catch (e) {
+                showToast('Network error dispatching video.', 'error');
+            } finally {
+                setTimeout(() => { isDispatching = false; }, 2000);
+            }
+        }
+
+        // Audio Beep Feedback (HTML5 Web Audio Synthesizer)
+        function playBeep(freq = 520, dur = 0.05) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + dur);
+            } catch (_) {}
+        }
+
+        // Toast Helper
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const text = document.getElementById('toastMsg');
+
+            text.innerText = msg;
+            icon.innerText = type === 'success' ? '✅' : (type === 'error' ? '⚠️' : '🚀');
+            t.className = 'toast show';
+
+            setTimeout(() => {
+                t.className = 'toast';
+            }, 3000);
+        }
+
+        function showError(msg) {
+            document.getElementById('loadingScreen').innerHTML = `
+                <div style="font-size: 2.5rem; margin-bottom: 8px;">⛔</div>
+                <div style="font-weight: 800; font-size: 1.1rem; color: #ef4444; text-align: center; padding: 0 20px;">${msg}</div>
+                <p style="font-size: 0.8rem; color: #94a3b8; text-align: center; margin-top: 6px;">කරුණාකර Bot Owner සම්බන්ධ කරගෙන VIP Access ලබාගන්න.</p>
+            `;
+        }
+    </script>
+</body>
+</html>

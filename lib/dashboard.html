@@ -944,6 +944,9 @@
             <button class="tab-btn" onclick="switchTab('owner')">
                 👑 Owner Hub
             </button>
+            <button class="tab-btn" onclick="switchTab('vip')">
+                🎬 VIP Video & Remote Hub
+            </button>
             <button class="tab-btn" onclick="switchTab('commands')">
                 📜 .menu Explorer (<span id="tabCmdCount">104</span>)
             </button>
@@ -1389,6 +1392,154 @@
             </div>
         </div>
 
+        <!-- TAB 4: VIP VIDEO & REMOTE CONTROLLER HUB -->
+        <div id="tab-vip" class="tab-content" style="display: none;">
+            <div class="section-header" style="margin-bottom: 20px;">
+                <div>
+                    <div class="section-title" style="display: flex; align-items: center; gap: 10px;">
+                        <span>👑 VIP Video Remote & Telegram Engine</span>
+                        <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);">Exclusive .xrd Access</span>
+                    </div>
+                    <span style="font-size: 0.8rem; color: var(--text-dim);">
+                        මෙතැනින් VIP Access ලබාදී ඇති අංක වලට පමණක් .xrd මඟින් Live Remote එක හරහා Videos ලබාගත හැක.
+                    </span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <a href="/remote?token=owner_preview&user=94717884174" target="_blank" class="btn btn-primary" style="padding: 8px 16px; font-size: 0.82rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                        🎮 Launch Live Remote UI
+                    </a>
+                </div>
+            </div>
+
+            <div class="owner-grid">
+
+                <!-- 1. VIP Phone Number Access Manager -->
+                <div class="glass-card" style="grid-column: 1 / -1;">
+                    <div class="section-header">
+                        <div class="section-title">
+                            🔒 VIP User Access Manager (.xrd Permission)
+                        </div>
+                        <span style="font-size: 0.78rem; color: #10b981; font-weight: 700;">
+                            Active VIPs: <span id="vipCountBadge">0</span> Users
+                        </span>
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
+                        මෙම ලැයිස්තුවට ඇතුළත් කරන අංක වලට පමණක් Bot ගේ <code>.xrd</code> command එකෙන් Live Remote එක ලබාගත හැක. වෙනත් කිසිවෙකුට ප්‍රවේශ විය නොහැක.
+                    </p>
+
+                    <form onsubmit="handleGrantVip(event)" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px;">
+                        <input type="text" id="vipPhoneInput" placeholder="WhatsApp Number (e.g. 0771234567 or 9477...)" style="flex: 2; min-width: 180px;" required>
+                        <input type="text" id="vipNoteInput" placeholder="User Name / Note (e.g. Kasun VIP)" style="flex: 1.5; min-width: 150px;">
+                        <button type="submit" class="btn btn-success" style="min-width: 160px;" id="btnGrantVip">
+                            ➕ Grant VIP Access
+                        </button>
+                    </form>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Phone Number</th>
+                                    <th>Note / Name</th>
+                                    <th>Date Added</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vipTableBody">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 18px;">
+                                        Loading authorized VIP users...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 2. Telegram Bot & Channel Sync -->
+                <div class="glass-card">
+                    <div class="section-title" style="margin-bottom: 8px;">
+                        ✈️ Telegram Channel Integration
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
+                        Telegram Private Channel එකේ ඇති Videos ස්වයංක්‍රීයව Bot වෙත Sync කිරීමට Bot Token සහ Channel ID ඇතුළත් කරන්න.
+                    </p>
+
+                    <form onsubmit="handleSaveTelegramConfig(event)">
+                        <div class="input-group">
+                            <label>Telegram Bot Token (@BotFather)</label>
+                            <input type="password" id="tgBotToken" placeholder="7123456789:AAHxxx...">
+                        </div>
+
+                        <div class="input-group">
+                            <label>Telegram Channel / Group ID</label>
+                            <input type="text" id="tgChannelId" placeholder="-1002233445566 (Private Channel ID)">
+                        </div>
+
+                        <div style="display: flex; gap: 10px; margin-top: 14px;">
+                            <button type="submit" class="btn btn-primary" style="flex: 1;" id="btnSaveTg">
+                                💾 Save Settings
+                            </button>
+                            <button type="button" class="btn btn-ghost" style="flex: 1;" onclick="handleSyncTelegram()" id="btnSyncTg">
+                                🔄 Sync Videos Now
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 3. Add Custom Video to VIP Catalog -->
+                <div class="glass-card">
+                    <div class="section-title" style="margin-bottom: 8px;">
+                        ➕ Add Video Directly to Catalog
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
+                        PC එකේ හෝ Cloud එකේ ඇති Video එකක් සෘජුවම Folder එකක් යටතට ඇතුළත් කරන්න.
+                    </p>
+
+                    <form onsubmit="handleManualAddVideo(event)">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="input-group">
+                                <label>Folder Name</label>
+                                <input type="text" id="addVidFolder" placeholder="e.g. Action Movies" required>
+                            </div>
+                            <div class="input-group">
+                                <label>Video Code / Digits</label>
+                                <input type="text" id="addVidCode" placeholder="e.g. 01 or 45" required>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Video Title</label>
+                            <input type="text" id="addVidTitle" placeholder="e.g. Mission Impossible Part 1" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Download / Stream URL</label>
+                            <input type="text" id="addVidUrl" placeholder="https://.../video.mp4" required>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="input-group">
+                                <label>Size (e.g. 650 MB)</label>
+                                <input type="text" id="addVidSize" placeholder="650 MB">
+                            </div>
+                            <div class="input-group">
+                                <label>Quality</label>
+                                <input type="text" id="addVidQuality" placeholder="1080p Full HD">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-success btn-block" id="btnAddVidBtn">
+                            🎬 Save Video to VIP Catalog
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+
         <!-- TAB 3: COMMANDS (.MENU EXPLORER) -->
         <div id="tab-commands" class="tab-content" style="display: none;">
             <div class="section-header">
@@ -1536,7 +1687,12 @@
                 btns[1].classList.add('active');
                 loadBlockedList();
             }
-            if (tabId === 'commands') btns[2].classList.add('active');
+            if (tabId === 'vip') {
+                btns[2].classList.add('active');
+                loadVipUsers();
+                loadTelegramConfig();
+            }
+            if (tabId === 'commands') btns[3].classList.add('active');
         }
 
         // Live Polling
@@ -2122,6 +2278,197 @@
         function quickToggleFeature(feature) {
             const current = botToggles[feature] !== false;
             toggleBotFeature(feature, !current);
+        }
+
+        // ============================================
+        // 👑 VIP VIDEO ACCESS & TELEGRAM CONTROLS
+        // ============================================
+        async function loadVipUsers() {
+            const tbody = document.getElementById('vipTableBody');
+            const badge = document.getElementById('vipCountBadge');
+            try {
+                const res = await fetch('/api/vip-users', { headers: authHeaders() });
+                const d = await res.json();
+                if (!d.success || !d.list || d.list.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 18px;">No authorized VIP users yet. Add phone numbers below.</td></tr>`;
+                    if (badge) badge.innerText = '0';
+                    return;
+                }
+
+                if (badge) badge.innerText = d.list.length;
+                tbody.innerHTML = d.list.map((u, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td style="color: #38bdf8; font-weight: 700;">+${u.number}</td>
+                        <td>${u.note || 'VIP Access'}</td>
+                        <td style="font-size: 0.75rem; color: var(--text-dim);">${new Date(u.addedAt).toLocaleDateString()}</td>
+                        <td><span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #4ade80;">ACTIVE VIP</span></td>
+                        <td>
+                            <button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.75rem; color: #f87171;" onclick="handleRevokeVip('${u.number}')">
+                                🗑️ Revoke
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger); padding: 18px;">Error loading VIP users</td></tr>`;
+            }
+        }
+
+        async function handleGrantVip(e) {
+            e.preventDefault();
+            const num = document.getElementById('vipPhoneInput').value.trim();
+            const note = document.getElementById('vipNoteInput').value.trim();
+            const btn = document.getElementById('btnGrantVip');
+
+            btn.disabled = true;
+            btn.innerText = 'Granting...';
+
+            try {
+                const res = await fetch('/api/vip-users', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ number: num, note: note })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(d.message || 'VIP Access granted!', 'success');
+                    document.getElementById('vipPhoneInput').value = '';
+                    document.getElementById('vipNoteInput').value = '';
+                    loadVipUsers();
+                } else {
+                    showToast(d.error || 'Failed to grant VIP access', 'error');
+                }
+            } catch (err) {
+                showToast('Network error granting VIP access', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '➕ Grant VIP Access';
+            }
+        }
+
+        async function handleRevokeVip(number) {
+            if (!confirm(`Are you sure you want to revoke VIP access for +${number}?`)) return;
+
+            try {
+                const res = await fetch(`/api/vip-users/${encodeURIComponent(number)}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(`Revoked VIP access for +${number}`, 'success');
+                    loadVipUsers();
+                } else {
+                    showToast(d.error || 'Failed to revoke access', 'error');
+                }
+            } catch (e) {
+                showToast('Network error revoking access', 'error');
+            }
+        }
+
+        async function loadTelegramConfig() {
+            try {
+                const res = await fetch('/api/telegram-config', { headers: authHeaders() });
+                const d = await res.json();
+                if (d.success && d.config) {
+                    if (d.config.botToken) document.getElementById('tgBotToken').value = d.config.botToken;
+                    if (d.config.channelId) document.getElementById('tgChannelId').value = d.config.channelId;
+                }
+            } catch (e) {}
+        }
+
+        async function handleSaveTelegramConfig(e) {
+            e.preventDefault();
+            const token = document.getElementById('tgBotToken').value.trim();
+            const channel = document.getElementById('tgChannelId').value.trim();
+            const btn = document.getElementById('btnSaveTg');
+
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            try {
+                const res = await fetch('/api/telegram-config', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ botToken: token, channelId: channel })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast('✅ Telegram settings saved!', 'success');
+                } else {
+                    showToast(d.error || 'Failed to save Telegram settings', 'error');
+                }
+            } catch (err) {
+                showToast('Network error saving Telegram settings', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '💾 Save Settings';
+            }
+        }
+
+        async function handleSyncTelegram() {
+            const token = document.getElementById('tgBotToken').value.trim();
+            const channel = document.getElementById('tgChannelId').value.trim();
+            const btn = document.getElementById('btnSyncTg');
+
+            btn.disabled = true;
+            btn.innerText = '⏳ Syncing...';
+
+            try {
+                const res = await fetch('/api/telegram/sync', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ botToken: token, channelId: channel })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(`✅ ${d.message || 'Telegram sync completed!'}`, 'success');
+                } else {
+                    showToast(`⚠️ ${d.error || 'Telegram sync failed'}`, 'error');
+                }
+            } catch (err) {
+                showToast('Network error syncing Telegram', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '🔄 Sync Videos Now';
+            }
+        }
+
+        async function handleManualAddVideo(e) {
+            e.preventDefault();
+            const folder = document.getElementById('addVidFolder').value.trim();
+            const code = document.getElementById('addVidCode').value.trim();
+            const title = document.getElementById('addVidTitle').value.trim();
+            const url = document.getElementById('addVidUrl').value.trim();
+            const sizeFmt = document.getElementById('addVidSize').value.trim();
+            const quality = document.getElementById('addVidQuality').value.trim();
+            const btn = document.getElementById('btnAddVidBtn');
+
+            btn.disabled = true;
+            btn.innerText = 'Saving Video...';
+
+            try {
+                const res = await fetch('/api/vip-videos/add', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ folder, code, title, url, sizeFmt, quality })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast('✅ Video added to VIP Catalog!', 'success');
+                    document.getElementById('addVidTitle').value = '';
+                    document.getElementById('addVidUrl').value = '';
+                    document.getElementById('addVidCode').value = '';
+                } else {
+                    showToast(d.error || 'Failed to add video', 'error');
+                }
+            } catch (err) {
+                showToast('Network error adding video', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '🎬 Save Video to VIP Catalog';
+            }
         }
     </script>
 </body>

@@ -5,6 +5,7 @@ const DownloadGuard = require('./lib/downloadGuard');
 DownloadGuard.installProcessCrashGuard();
 
 global.blockedUsersCache = new Map();
+if (!global.vipVideoUsersCache) global.vipVideoUsersCache = new Set();
 if (global.AUTO_VOICE_ENABLED === undefined) global.AUTO_VOICE_ENABLED = (process.env.AUTO_VOICE !== 'false');
 if (global.VERIFICATION_POLL_ENABLED === undefined) global.VERIFICATION_POLL_ENABLED = true;
 const express = require('express');
@@ -174,6 +175,15 @@ async function connectToWA() {
             if (typeof doc.autoVoice === 'boolean') global.AUTO_VOICE_ENABLED = doc.autoVoice;
             if (typeof doc.antiBotVerification === 'boolean') global.VERIFICATION_POLL_ENABLED = doc.antiBotVerification;
             console.log('🛡️ [Bot Toggles Restored]:', { autoVoice: global.AUTO_VOICE_ENABLED, antiBotVerification: global.VERIFICATION_POLL_ENABLED });
+        }
+    }).catch(() => {});
+    db.collection('vip_video_users').find().toArray().then(users => {
+        if (!global.vipVideoUsersCache) global.vipVideoUsersCache = new Set();
+        if (users && users.length) {
+            users.forEach(u => {
+                if (u._id) global.vipVideoUsersCache.add(String(u._id));
+            });
+            console.log(`👑 [VIP Users Restored]: ${global.vipVideoUsersCache.size} active VIP users loaded into memory.`);
         }
     }).catch(() => {});
 
