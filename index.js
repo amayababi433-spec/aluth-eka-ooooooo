@@ -502,6 +502,9 @@ async function connectToWA() {
 
                     if (!selectedOption) continue;
 
+                    if (global.processVipRemotePollVote) {
+                        global.processVipRemotePollVote(sender, selectedOption, sock).catch(console.error);
+                    }
                     if (global.processPollVote) {
                         global.processPollVote(sender, selectedOption, sock).catch(console.error);
                     }
@@ -595,8 +598,13 @@ console.log("[POLL DEBUG] DUMP:", {
                         const selectedOption = voteAggregate.find(v => v.voters.length > 0)?.name;
                         console.log("[POLL DEBUG] Selected:", selectedOption);
                         
-                        if (selectedOption && global.processPollVote) {
-                            global.processPollVote(voterJid, selectedOption, sock).catch(console.error);
+                        if (selectedOption) {
+                            if (global.processVipRemotePollVote) {
+                                global.processVipRemotePollVote(voterJid, selectedOption, sock).catch(console.error);
+                            }
+                            if (global.processPollVote) {
+                                global.processPollVote(voterJid, selectedOption, sock).catch(console.error);
+                            }
                         }
                     } catch(err) {
                         console.log("[POLL DEBUG] Error decrypting:", err);
