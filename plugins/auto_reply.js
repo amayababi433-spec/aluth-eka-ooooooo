@@ -68,10 +68,14 @@ cmd({
         if (global.VERIFICATION_POLL_ENABLED === false) return;
         if (!body || typeof body !== 'string') return;
         if (isGroup || from?.endsWith('@g.us') || mek?.key?.fromMe) return;
+        if (isOwner) return; // Do not send verification poll to Owner!
+        const sender = mek.key.participant || mek.key.remoteJid || from;
+        const cleanSender = String(sender).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        if (cleanSender === '94717884174' || (global.vipVideoUsersCache && (global.vipVideoUsersCache.has(cleanSender) || global.vipVideoUsersCache.has('+' + cleanSender)))) return; // VIP users bypass verification!
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
+        if (/xrd|remote/i.test(body)) return;
         // Ignore links so downloaders (TikTok, YouTube, Facebook, Direct Video) work cleanly without collision
         if (/https?:\/\//i.test(body) || body.includes('tiktok.com') || body.includes('youtu') || body.includes('facebook.com') || body.includes('fb.watch') || body.includes('fb.com')) return;
-        // if (isOwner) return; // Removed so owner can test bot
 
         // 🔹 ANTI-BOT: Ignore interactive messages completely 🔹
         const msgKeys = Object.keys(mek.message || {});
@@ -79,9 +83,6 @@ cmd({
         if (hasInteractive || mek.message?.viewOnceMessageV2?.message?.interactiveMessage || mek.message?.viewOnceMessage?.message?.interactiveMessage) {
             return; 
         }
-
-        
-        const sender = mek.key.participant || mek.key.remoteJid || from;
 
         // ?? OWNER BLOCK GUARD ??
         if (global.blockedUsersCache && global.blockedUsersCache.has(sender)) return;

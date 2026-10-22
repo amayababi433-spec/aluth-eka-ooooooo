@@ -109,25 +109,66 @@ function getRemoteBaseUrl() {
     return `http://localhost:${process.env.PORT || 8000}`;
 }
 
-// Helper: Get Safe Catalog (guarantees non-empty)
+// Helper: Get Live Catalog with direct MongoDB fallback & auto-sync
+async function getLiveCatalog() {
+    if (typeof global.autoSyncTelegramVideos === 'function') {
+        await global.autoSyncTelegramVideos().catch(() => {});
+    }
+
+    try {
+        const { MongoClient } = require('mongodb');
+        if (process.env.MONGODB_URI) {
+            const client = new MongoClient(process.env.MONGODB_URI);
+            await client.connect();
+            const allVideos = await client.db('whatsapp_bot').collection('telegram_videos').find().sort({ folder: 1, code: 1 }).toArray();
+            await client.close();
+
+            if (allVideos && allVideos.length > 0) {
+                const folderMap = {};
+                allVideos.forEach(v => {
+                    const fName = v.folder || 'General Videos';
+                    if (!folderMap[fName]) folderMap[fName] = { name: fName, videos: [] };
+                    folderMap[fName].videos.push({
+                        id: v._id.toString(),
+                        code: v.code || '01',
+                        title: v.title || v.fileName || 'Untitled Video',
+                        sizeFmt: v.sizeFmt || (v.sizeMB ? `${v.sizeMB} MB` : 'HD'),
+                        durationFmt: v.durationFmt || (v.duration ? `${Math.round(v.duration / 60)}m` : 'HD'),
+                        thumbnailUrl: v.thumbnailUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
+                        url: v.url || v.downloadUrl,
+                        quality: v.quality || '1080p Full HD',
+                        fileId: v.fileId
+                    });
+                });
+                global.vipVideoCatalog = Object.values(folderMap);
+                return global.vipVideoCatalog;
+            }
+        }
+    } catch (_) {}
+
+    if (global.vipVideoCatalog && Array.isArray(global.vipVideoCatalog) && global.vipVideoCatalog.length > 0) {
+        return global.vipVideoCatalog;
+    }
+
+    return [
+        {
+            name: '🎬 Action',
+            videos: [
+                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD' }
+            ]
+        }
+    ];
+}
+
 function getCatalog() {
     if (global.vipVideoCatalog && Array.isArray(global.vipVideoCatalog) && global.vipVideoCatalog.length > 0) {
         return global.vipVideoCatalog;
     }
     return [
         {
-            name: '🎬 Action Movies',
+            name: '🎬 Action',
             videos: [
-                { id: 'v1', code: '01', title: 'Action Thriller Part 1', sizeFmt: '520 MB', durationFmt: '45m', quality: '1080p Full HD' },
-                { id: 'v2', code: '02', title: 'Action Thriller Part 2', sizeFmt: '610 MB', durationFmt: '50m', quality: '1080p Full HD' },
-                { id: 'v3', code: '03', title: 'Action Thriller Part 3', sizeFmt: '490 MB', durationFmt: '38m', quality: '1080p Full HD' }
-            ]
-        },
-        {
-            name: '📺 Hindi Teledramas',
-            videos: [
-                { id: 'v4', code: '04', title: 'Hindi Dubbed Episode 1', sizeFmt: '350 MB', durationFmt: '42m', quality: '720p HD' },
-                { id: 'v5', code: '05', title: 'Hindi Dubbed Episode 2', sizeFmt: '380 MB', durationFmt: '44m', quality: '720p HD' }
+                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD' }
             ]
         }
     ];
@@ -135,7 +176,7 @@ function getCatalog() {
 
 // Helper: Send the WhatsApp Native TV Controller (Card + Poll Controls)
 async function sendWhatsAppRemoteCard(conn, toJid, cleanNumber, isOwner) {
-    const catalog = getCatalog();
+    const catalog = await getLiveCatalog();
     let session = global.vipUserRemoteSessions.get(cleanNumber);
     if (!session) {
         session = { folderIndex: 0, videoIndex: 0, lastActionTime: 0 };
