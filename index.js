@@ -425,6 +425,28 @@ async function connectToWA() {
                         const pendingMessages = await outboxCol.find({ status: 'pending' }).limit(5).toArray();
                         for (const item of pendingMessages) {
                             try {
+                                if (item.videoData && (item.videoData.messageId || item.videoData.fileId)) {
+                                    try {
+                                        const { downloadTelegramVideo } = require('./lib/telegramDownloader');
+                                        const fileName = `${(item.videoData?.title || 'VIP_Video').replace(/[^\w\s.-]/g, '_')}.mp4`;
+                                        const localFilePath = await downloadTelegramVideo(-1004382943539, item.videoData.messageId || 5, fileName);
+                                        if (fs.existsSync(localFilePath)) {
+                                            await currentSock.sendMessage(item.jid, {
+                                                document: fs.readFileSync(localFilePath),
+                                                mimetype: 'video/mp4',
+                                                fileName: fileName,
+                                                caption: `🎬 *${item.videoData?.title || 'VIP Video'}*\n💾 Size: ${item.videoData?.sizeFmt || 'HD'}\n👑 DMC™ VIP Video Stream\n🍿 Enjoy your movie!`
+                                            });
+                                            try { fs.unlinkSync(localFilePath); } catch (_) {}
+                                            await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'sent', sentAt: new Date() } });
+                                            console.log(`🚀 [Outbox] Sent downloaded Telegram video to ${item.jid}`);
+                                            continue;
+                                        }
+                                    } catch (tgErr) {
+                                        console.error('Outbox Telegram MTProto download failed, falling back to stream link:', tgErr.message);
+                                    }
+                                }
+
                                 if (item.videoUrl && /^https?:\/\/.*?\.(mp4|mkv|avi|mov|webm|ts)/i.test(item.videoUrl)) {
                                     await currentSock.sendMessage(item.jid, {
                                         document: { url: item.videoUrl },
