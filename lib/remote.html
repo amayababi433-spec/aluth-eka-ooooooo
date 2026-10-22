@@ -554,6 +554,11 @@
                     <span class="meta-tag" id="videoIndexCounter">🎬 1 of 1</span>
                     <span class="meta-tag" id="videoQuality" style="color: #34d399;">1080p Full HD</span>
                 </div>
+                <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
+                    <a id="streamDirectLink" href="#" target="_blank" style="background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;">
+                        <span>▶️ Watch in Telegram</span>
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -697,6 +702,13 @@
             // Update Thumbnail
             const thumbEl = document.getElementById('videoThumbnail');
             thumbEl.src = video.thumbnailUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80';
+
+            // Update Stream Direct Link
+            const streamBtn = document.getElementById('streamDirectLink');
+            if (streamBtn) {
+                const streamUrl = video.directLink || video.url || (video.messageId ? `https://t.me/c/4382943539/${video.messageId}` : 'https://t.me/c/4382943539/5');
+                streamBtn.href = streamUrl;
+            }
         }
 
         // Navigate Folders (Up / Down)

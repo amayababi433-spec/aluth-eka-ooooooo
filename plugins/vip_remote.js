@@ -135,7 +135,9 @@ async function getLiveCatalog() {
                         sizeFmt: v.sizeFmt || (v.sizeMB ? `${v.sizeMB} MB` : 'HD'),
                         durationFmt: v.durationFmt || (v.duration ? `${Math.round(v.duration / 60)}m` : 'HD'),
                         thumbnailUrl: v.thumbnailUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
-                        url: v.url || v.downloadUrl,
+                        url: v.url || v.downloadUrl || v.directLink || (v.messageId ? `https://t.me/c/4382943539/${v.messageId}` : 'https://t.me/c/4382943539/5'),
+                        directLink: v.directLink || (v.messageId ? `https://t.me/c/4382943539/${v.messageId}` : 'https://t.me/c/4382943539/5'),
+                        messageId: v.messageId || 5,
                         quality: v.quality || '1080p Full HD',
                         fileId: v.fileId
                     });
@@ -154,7 +156,7 @@ async function getLiveCatalog() {
         {
             name: '🎬 Action',
             videos: [
-                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD' }
+                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD', directLink: 'https://t.me/c/4382943539/5', messageId: 5 }
             ]
         }
     ];
@@ -168,13 +170,13 @@ function getCatalog() {
         {
             name: '🎬 Action',
             videos: [
-                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD' }
+                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD', directLink: 'https://t.me/c/4382943539/5', messageId: 5 }
             ]
         }
     ];
 }
 
-// Helper: Send the WhatsApp Native TV Controller (Card + Poll Controls)
+// Helper: Send the WhatsApp Native TV Controller (Visual Card + Shortcut Commands - NO POLLS)
 async function sendWhatsAppRemoteCard(conn, toJid, cleanNumber, isOwner) {
     const catalog = await getLiveCatalog();
     let session = global.vipUserRemoteSessions.get(cleanNumber);
@@ -208,13 +210,16 @@ async function sendWhatsAppRemoteCard(conn, toJid, cleanNumber, isOwner) {
         `🌟 *Quality:* ${currentVideo.quality || '1080p Full HD'}\n` +
         `🔢 *Direct Code:* \`.v ${currentVideo.code}\`\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🎮 *WHATSAPP NATIVE CONTROLLER:*\n` +
-        `පහත Poll Buttons මඟින් Real-time Folders හා Videos මාරු කර ගන්න _(WhatsApp Package අයට Data කැපෙන්නේ නැත)_:\n\n` +
-        `▶️ *Next Video* | ◀️ *Prev Video*\n` +
-        `📁 *Next Folder* | 📁 *Prev Folder*\n` +
-        `🔴 *SEND THIS VIDEO* (කෙළින්ම Chat එකට එවයි)\n` +
+        `🎮 *WHATSAPP SHORTCUT COMMANDS:*\n` +
+        `_WhatsApp Package අයට Data කැපෙන්නේ නැත. පහත Commands chat එකට එවන්න:_\n\n` +
+        `▶️ *.vn*  ➜  ඊළඟ Video එක (Next Video)\n` +
+        `◀️ *.vp*  ➜  කලින් Video එක (Prev Video)\n` +
+        `📁 *.vf*  ➜  ඊළඟ Folder එක (Next Folder)\n` +
+        `🔴 *.vok* ➜  මෙම Video එක ලබාගන්න (Send Video)\n` +
+        `🔢 *.v ${currentVideo.code}* ➜  අංකයෙන් Video එක කෙළින්ම ගන්න\n` +
+        `📑 *.vlist* ➜ සියලුම Videos Catalog එක බලන්න\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💡 _Normal Data හෝ WiFi ඇති අයට Web Remote Screen එක:_ \n` +
+        `🌐 *Live Web Remote Screen එක:* \n` +
         `🔗 ${remoteUrl}`;
 
     // Send visual card
@@ -232,26 +237,6 @@ async function sendWhatsAppRemoteCard(conn, toJid, cleanNumber, isOwner) {
         });
     } else {
         await conn.sendMessage(toJid, { text: captionText });
-    }
-
-    // Send Interactive Controller Poll (Works 100% inside WhatsApp on all data packages)
-    const pollMsg = await conn.sendMessage(toJid, {
-        poll: {
-            name: `🎮 TV Remote: [${currentFolder.name}] • Vid ${session.videoIndex + 1}/${videos.length}`,
-            values: [
-                "▶️ Next Video",
-                "◀️ Previous Video",
-                "📁 Next Folder ⬇️",
-                "📁 Previous Folder ⬆️",
-                "🔴 SEND THIS VIDEO (WhatsApp)",
-                "📑 Show Full Video List"
-            ],
-            selectableCount: 1
-        }
-    });
-
-    if (pollMsg?.key?.id && global.activePolls) {
-        global.activePolls.set(pollMsg.key.id, pollMsg);
     }
 }
 
@@ -457,6 +442,27 @@ cmd({ pattern: "vok", alias: ["vsend"], desc: "Remote: Send Current Video", cate
             await global.dispatchVipVideoToWhatsApp(from, targetVideo);
         }
     }
+});
+
+cmd({
+    pattern: "vlist",
+    alias: ["vcatalog", "videos"],
+    desc: "Show full VIP Video Catalog with codes",
+    category: "vip"
+}, async (conn, mek, m, { from, sender, isOwner }) => {
+    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
+    if (!vipAuth.isVip) return;
+    const catalog = await getLiveCatalog();
+    let listText = `👑 *DMC™ VIP VIDEO CATALOG* 🎬\n\n`;
+    catalog.forEach((f, fIdx) => {
+        listText += `📁 *[${fIdx + 1}] ${f.name}:*\n`;
+        (f.videos || []).forEach((v, vIdx) => {
+            listText += `  • [${v.code || (vIdx + 1)}] *${v.title}* (${v.sizeFmt || 'HD'})\n`;
+        });
+        listText += `\n`;
+    });
+    listText += `💡 _ඕනෑම Video එකක් ලබාගැනීමට \`.v <Code>\` ලෙස එවන්න (උදා: \`.v 01\`)_`;
+    await conn.sendMessage(from, { text: listText });
 });
 
 module.exports = {

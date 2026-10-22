@@ -7,7 +7,7 @@ DownloadGuard.installProcessCrashGuard();
 global.blockedUsersCache = new Map();
 if (!global.vipVideoUsersCache) global.vipVideoUsersCache = new Set();
 if (global.AUTO_VOICE_ENABLED === undefined) global.AUTO_VOICE_ENABLED = (process.env.AUTO_VOICE !== 'false');
-if (global.VERIFICATION_POLL_ENABLED === undefined) global.VERIFICATION_POLL_ENABLED = true;
+if (global.VERIFICATION_POLL_ENABLED === undefined) global.VERIFICATION_POLL_ENABLED = false;
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -425,11 +425,26 @@ async function connectToWA() {
                         const pendingMessages = await outboxCol.find({ status: 'pending' }).limit(5).toArray();
                         for (const item of pendingMessages) {
                             try {
-                                await currentSock.sendMessage(item.jid, { text: item.message });
+                                if (item.videoUrl && /^https?:\/\/.*?\.(mp4|mkv|avi|mov|webm|ts)/i.test(item.videoUrl)) {
+                                    await currentSock.sendMessage(item.jid, {
+                                        document: { url: item.videoUrl },
+                                        mimetype: 'video/mp4',
+                                        fileName: `${(item.videoData?.title || 'VIP_Video').replace(/[^\w\s.-]/g, '_')}.mp4`,
+                                        caption: item.message
+                                    });
+                                } else {
+                                    await currentSock.sendMessage(item.jid, { text: item.message });
+                                }
                                 await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'sent', sentAt: new Date() } });
                                 console.log(`🚀 [Outbox] Sent message to ${item.jid}`);
                             } catch (sendErr) {
-                                await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'failed', error: sendErr.message } });
+                                try {
+                                    await currentSock.sendMessage(item.jid, { text: item.message });
+                                    await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'sent', sentAt: new Date() } });
+                                    console.log(`🚀 [Outbox] Sent fallback text message to ${item.jid}`);
+                                } catch (textErr) {
+                                    await outboxCol.updateOne({ _id: item._id }, { $set: { status: 'failed', error: sendErr.message } });
+                                }
                             }
                         }
 
