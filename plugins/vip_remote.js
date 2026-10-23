@@ -277,7 +277,7 @@ async function sendWhatsAppCollageRemoteCard(conn, toJid, cleanNumber, isOwner) 
     });
 
     const captionText = 
-        `👑 *DMC™ VIP TV REMOTE CONTROLLER* 📺\n` +
+        `👑 *DMC™ VIP VIDEO GALLERY* 🎬\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `🖼️ *COLLAGE [${session.collageIndex + 1}/${collages.length}]:* #Collage${currentCollage.collageNum}\n` +
         `📁 *SECTION:* # General  (4,1 Videos)\n` +
@@ -311,25 +311,25 @@ async function sendWhatsAppCollageRemoteCard(conn, toJid, cleanNumber, isOwner) 
     }
 }
 
-// 1. Main Command: .xrd (VIP Video Remote Controller)
+// 1. Main Command: .xrd / .collage / .general
 cmd({
     pattern: "xrd",
-    alias: ["xrdremote", "vipremote", "tvremote", "collage", "general", "41"],
-    desc: "Open VIP Live Video Remote Controller (Collage-Centric)",
+    alias: ["collage", "general", "41", "videos", "gallery"],
+    desc: "Open VIP Video Gallery (Collage-Centric)",
     category: "vip",
-    react: "🎮"
+    react: "🎬"
 }, async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
         const senderJid = sender || mek.key.participant || from;
         const vipAuth = await isVipUser(senderJid, isOwner, conn, mek);
         const cleanNumber = vipAuth.cleanNumber;
 
-        console.log(`👑 [VIP Remote] .xrd triggered by ${senderJid} => VIP: ${vipAuth.isVip}`);
+        console.log(`👑 [VIP Gallery] .xrd triggered by ${senderJid} => VIP: ${vipAuth.isVip}`);
 
         if (!vipAuth.isVip) {
             return await reply(
                 "⛔ *ACCESS DENIED (VIP ONLY)* ⛔\n\n" +
-                "මෙම විශේෂිත Video Remote Controller එක ලබාගැනීමට ඔබට අවසර (VIP Access) නොමැත.\n\n" +
+                "මෙම විශේෂිත Video Gallery එක ලබාගැනීමට ඔබට අවසර (VIP Access) නොමැත.\n\n" +
                 "💡 _අවසර ලබාගැනීම සඳහා කරුණාකර Bot Owner (+94717884174) සම්බන්ධ කරගන්න._"
             );
         }
@@ -337,8 +337,8 @@ cmd({
         await sendWhatsAppCollageRemoteCard(conn, from, cleanNumber, isOwner);
 
     } catch (e) {
-        console.error("VIP Remote Error:", e);
-        await reply("⚠️ Controller එක open කිරීමේදී දෝෂයක් සිදුවිය.");
+        console.error("VIP Gallery Error:", e);
+        await reply("⚠️ Video Gallery එක open කිරීමේදී දෝෂයක් සිදුවිය.");
     }
 });
 
