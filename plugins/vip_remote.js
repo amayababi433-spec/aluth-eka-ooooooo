@@ -109,223 +109,196 @@ function getRemoteBaseUrl() {
     return `http://localhost:${process.env.PORT || 8000}`;
 }
 
-// Helper: Get Live Catalog with direct MongoDB fallback & auto-sync
-async function getLiveCatalog() {
-    if (typeof global.autoSyncTelegramVideos === 'function') {
-        await global.autoSyncTelegramVideos().catch(() => {});
+// Helper: Detect and load local 4,1 (# General) videos & Collage Photo
+function getLocalSection41Videos() {
+    const targetDir = 'C:\\Users\\MYPC\\Downloads\\Video\\2026\\4,1\\New Folder';
+    if (!fs.existsSync(targetDir)) return null;
+
+    try {
+        const files = fs.readdirSync(targetDir);
+        const videoFiles = files.filter(f => f.startsWith('#General') && !f.endsWith('.png')).sort();
+
+        const videos = [];
+        for (const f of videoFiles) {
+            const fullPath = path.join(targetDir, f);
+            const match = f.match(/#General\s*(\d+)/i);
+            const code = match ? match[1] : '';
+            const stat = fs.statSync(fullPath);
+            const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+
+            let title = f.replace(/^#General\s*\d+\s*/i, '').replace(/\.[^/.]+$/, '').trim();
+            if (!title) title = `Clip ${code}`;
+
+            videos.push({
+                id: `local_${code}`,
+                code: code,
+                title: title,
+                fileName: f,
+                filePath: fullPath,
+                sizeFmt: `${sizeMB} MB`,
+                durationFmt: 'HD',
+                quality: '1080p Full HD',
+                isLocal: true
+            });
+        }
+
+        const collagePath = path.join(targetDir, '#General_Collage_10_16.png');
+        return {
+            name: '📁 4,1 (# General)',
+            videos,
+            collagePath: fs.existsSync(collagePath) ? collagePath : null
+        };
+    } catch (e) {
+        console.error("Local 4,1 load error:", e.message);
+        return null;
     }
+}
+
+// Helper: Get all Collages from MongoDB & Local Cache
+async function getCollagesCatalog() {
+    let collages = [];
 
     try {
         const { MongoClient } = require('mongodb');
         if (process.env.MONGODB_URI) {
             const client = new MongoClient(process.env.MONGODB_URI);
             await client.connect();
-            const allVideos = await client.db('whatsapp_bot').collection('telegram_videos').find().sort({ folder: 1, code: 1 }).toArray();
+            const db = client.db('whatsapp_bot');
+            const cList = await db.collection('telegram_collages').find().sort({ collageNum: 1 }).toArray();
+            const vList = await db.collection('telegram_videos').find().sort({ code: 1 }).toArray();
             await client.close();
 
-            if (allVideos && allVideos.length > 0) {
-                const folderMap = {};
-                allVideos.forEach(v => {
-                    const fName = v.folder || 'General Videos';
-                    if (!folderMap[fName]) folderMap[fName] = { name: fName, videos: [] };
-                    folderMap[fName].videos.push({
-                        id: v._id.toString(),
-                        code: v.code || '01',
-                        title: v.title || v.fileName || 'Untitled Video',
-                        sizeFmt: v.sizeFmt || (v.sizeMB ? `${v.sizeMB} MB` : 'HD'),
-                        durationFmt: v.durationFmt || (v.duration ? `${Math.round(v.duration / 60)}m` : 'HD'),
-                        thumbnailUrl: v.thumbnailUrl || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
-                        url: v.url || v.downloadUrl || v.directLink || (v.messageId ? `https://t.me/c/4382943539/${v.messageId}` : 'https://t.me/c/4382943539/5'),
-                        directLink: v.directLink || (v.messageId ? `https://t.me/c/4382943539/${v.messageId}` : 'https://t.me/c/4382943539/5'),
-                        messageId: v.messageId || 5,
-                        quality: v.quality || '1080p Full HD',
-                        fileId: v.fileId
-                    });
+            if (cList && cList.length > 0) {
+                collages = cList.map(c => {
+                    const cVideos = vList.filter(v => v.collageNum === c.collageNum || (c.collageNum === 1 && parseInt(v.code, 10) < 10) || (c.collageNum === 2 && parseInt(v.code, 10) >= 10));
+                    return {
+                        collageNum: c.collageNum,
+                        caption: c.caption || `#General #Collage${c.collageNum}`,
+                        photoBase64: c.photoBase64,
+                        localPath: c.localPath,
+                        videos: cVideos
+                    };
                 });
-                global.vipVideoCatalog = Object.values(folderMap);
-                return global.vipVideoCatalog;
             }
         }
-    } catch (_) {}
-
-    if (global.vipVideoCatalog && Array.isArray(global.vipVideoCatalog) && global.vipVideoCatalog.length > 0) {
-        return global.vipVideoCatalog;
+    } catch (e) {
+        console.error("Collage catalog load error:", e.message);
     }
 
-    return [
-        {
-            name: '🎬 Action',
-            videos: [
-                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD', directLink: 'https://t.me/c/4382943539/5', messageId: 5 }
-            ]
+    // Fallback if DB empty
+    if (collages.length === 0) {
+        const local41 = getLocalSection41Videos();
+        if (local41 && local41.collagePath) {
+            collages.push({
+                collageNum: 2,
+                caption: '#General #Collage2',
+                localPath: local41.collagePath,
+                videos: local41.videos
+            });
         }
-    ];
-}
-
-function getCatalog() {
-    if (global.vipVideoCatalog && Array.isArray(global.vipVideoCatalog) && global.vipVideoCatalog.length > 0) {
-        return global.vipVideoCatalog;
     }
-    return [
-        {
-            name: '🎬 Action',
-            videos: [
-                { id: 'v1', code: '01', title: 'Fast and Furious 01 1080p Full HD', sizeFmt: '42.2 MB', durationFmt: 'HD', quality: '1080p Full HD', directLink: 'https://t.me/c/4382943539/5', messageId: 5 }
-            ]
+
+    const cacheDir = path.join(__dirname, '../cache_collages');
+    if (!fs.existsSync(cacheDir)) {
+        try { fs.mkdirSync(cacheDir, { recursive: true }); } catch (_) {}
+    }
+
+    collages.forEach(c => {
+        if (!c.localPath || !fs.existsSync(c.localPath)) {
+            const targetFile = path.join(cacheDir, `collage_${c.collageNum}.jpg`);
+            if (c.photoBase64 && !fs.existsSync(targetFile)) {
+                try {
+                    fs.writeFileSync(targetFile, Buffer.from(c.photoBase64, 'base64'));
+                    c.localPath = targetFile;
+                } catch (_) {}
+            } else if (fs.existsSync(targetFile)) {
+                c.localPath = targetFile;
+            }
         }
-    ];
+    });
+
+    return collages;
 }
 
-// Helper: Send the WhatsApp Native TV Controller (Visual Card + Shortcut Commands - NO POLLS)
-async function sendWhatsAppRemoteCard(conn, toJid, cleanNumber, isOwner) {
-    const catalog = await getLiveCatalog();
+// Send WhatsApp Collage Remote Card (Collage-Centric Navigation)
+async function sendWhatsAppCollageRemoteCard(conn, toJid, cleanNumber, isOwner) {
+    const collages = await getCollagesCatalog();
+    if (!collages || collages.length === 0) {
+        return await conn.sendMessage(toJid, { text: "⚠️ Collages හමුනොවීය. කරුණාකර .sync මඟින් Telegram Collages Sync කරන්න." });
+    }
+
     let session = global.vipUserRemoteSessions.get(cleanNumber);
     if (!session) {
-        session = { folderIndex: 0, videoIndex: 0, lastActionTime: 0 };
+        session = { collageIndex: 0, lastActionTime: 0 };
         global.vipUserRemoteSessions.set(cleanNumber, session);
     }
 
-    // Safety checks for bounds
-    if (session.folderIndex >= catalog.length) session.folderIndex = 0;
-    if (session.folderIndex < 0) session.folderIndex = catalog.length - 1;
+    if (session.collageIndex === undefined) session.collageIndex = 0;
+    session.collageIndex = (session.collageIndex + collages.length) % collages.length;
 
-    const currentFolder = catalog[session.folderIndex] || catalog[0];
-    const videos = currentFolder.videos || [];
+    const currentCollage = collages[session.collageIndex];
+    const videos = currentCollage.videos || [];
+    const minCode = videos[0]?.code || '01';
+    const maxCode = videos[videos.length - 1]?.code || '09';
 
-    if (session.videoIndex >= videos.length) session.videoIndex = 0;
-    if (session.videoIndex < 0) session.videoIndex = Math.max(0, videos.length - 1);
+    const botNum = conn?.user?.id ? conn.user.id.split(':')[0].replace(/[^0-9]/g, '') : (config.OWNER_NUMBER || '94717884174').replace(/[^0-9]/g, '');
 
-    const currentVideo = videos[session.videoIndex] || { title: 'No Videos in Folder', code: '00', sizeFmt: 'N/A', quality: 'HD' };
-
-    const token = generateVipToken(cleanNumber);
-    const baseUrl = getRemoteBaseUrl();
-    const remoteUrl = `${baseUrl}/remote?token=${encodeURIComponent(token)}&user=${encodeURIComponent(cleanNumber)}`;
+    // Dynamic 1-Tap Links
+    let tapLinksText = `👇 *1-TAP VIDEO DOWNLOAD LINKS (Auto Mind):*\n_වීඩියෝව සෘජුවම ලබා ගැනීමට අදාළ Link එක ඔබන්න:_\n\n`;
+    videos.forEach(v => {
+        const tapUrl = `https://wa.me/${botNum}?text=.v+${encodeURIComponent(v.code)}`;
+        tapLinksText += `👉 🎬 *[${v.code}] ලබාගන්න:* ${tapUrl}\n`;
+    });
 
     const captionText = 
         `👑 *DMC™ VIP TV REMOTE CONTROLLER* 📺\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📁 *FOLDER [${session.folderIndex + 1}/${catalog.length}]:* ${currentFolder.name}\n` +
-        `🎬 *VIDEO [${session.videoIndex + 1}/${videos.length}]:* *${currentVideo.title}*\n` +
-        `💾 *Size:* ${currentVideo.sizeFmt || 'HD'}  |  ⏱️ *Duration:* ${currentVideo.durationFmt || 'HD'}\n` +
-        `🌟 *Quality:* ${currentVideo.quality || '1080p Full HD'}\n` +
-        `🔢 *Direct Code:* \`.v ${currentVideo.code}\`\n` +
+        `🖼️ *COLLAGE [${session.collageIndex + 1}/${collages.length}]:* #Collage${currentCollage.collageNum}\n` +
+        `📁 *SECTION:* # General  (4,1 Videos)\n` +
+        `🎬 *VIDEOS IN THIS COLLAGE:* [${minCode}] - [${maxCode}] (${videos.length} Videos)\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🎮 *WHATSAPP SHORTCUT COMMANDS:*\n` +
+        tapLinksText +
+        `\n━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🎮 *COLLAGE NAVIGATION COMMANDS:*\n` +
         `_WhatsApp Package අයට Data කැපෙන්නේ නැත. පහත Commands chat එකට එවන්න:_\n\n` +
-        `▶️ *.vn*  ➜  ඊළඟ Video එක (Next Video)\n` +
-        `◀️ *.vp*  ➜  කලින් Video එක (Prev Video)\n` +
-        `📁 *.vf*  ➜  ඊළඟ Folder එක (Next Folder)\n` +
-        `🔴 *.vok* ➜  මෙම Video එක ලබාගන්න (Send Video)\n` +
-        `🔢 *.v ${currentVideo.code}* ➜  අංකයෙන් Video එක කෙළින්ම ගන්න\n` +
-        `📑 *.vlist* ➜ සියලුම Videos Catalog එක බලන්න\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🌐 *Live Web Remote Screen එක:* \n` +
-        `🔗 ${remoteUrl}`;
+        `▶️ *.vn*  ➜  ඊළඟ Collage එක (Next Collage)\n` +
+        `◀️ *.vp*  ➜  කලින් Collage එක (Prev Collage)\n` +
+        `🔢 *.v <Code>* ➜  අංකයෙන් Video එක කෙළින්ම ගන්න (උදා: \`.v ${minCode}\`)\n` +
+        `📑 *.vlist* ➜ සියලුම Videos Catalog එක බලන්න`;
 
-    // Send visual card
-    const pollImgPath = path.join(__dirname, '../thumbnail/poll.png');
-    const menuImgPath = path.join(__dirname, '../thumbnail/menu.png');
+    // Collage Photo Buffer
     let imgBuffer = null;
-    if (fs.existsSync(pollImgPath)) imgBuffer = fs.readFileSync(pollImgPath);
-    else if (fs.existsSync(menuImgPath)) imgBuffer = fs.readFileSync(menuImgPath);
+    if (currentCollage.localPath && fs.existsSync(currentCollage.localPath)) {
+        imgBuffer = fs.readFileSync(currentCollage.localPath);
+    } else if (currentCollage.photoBase64) {
+        imgBuffer = Buffer.from(currentCollage.photoBase64, 'base64');
+    }
 
     if (imgBuffer) {
         await conn.sendMessage(toJid, {
             image: imgBuffer,
             caption: captionText,
-            mimetype: 'image/png'
+            mimetype: 'image/jpeg'
         });
     } else {
         await conn.sendMessage(toJid, { text: captionText });
     }
 }
 
-// 🎮 Interactive WhatsApp Poll Controller Handler
-global.processVipRemotePollVote = async function(senderJid, optionName, sock) {
-    if (!optionName || typeof optionName !== 'string') return;
-
-    const validOptions = [
-        "▶️ Next Video",
-        "◀️ Previous Video",
-        "📁 Next Folder ⬇️",
-        "📁 Previous Folder ⬆️",
-        "🔴 SEND THIS VIDEO (WhatsApp)",
-        "📑 Show Full Video List"
-    ];
-
-    const isOurPoll = validOptions.some(opt => optionName.includes(opt.split(' ')[1] || opt));
-    if (!isOurPoll) return;
-
-    const cleanNumber = extractCleanNumber(senderJid);
-    let session = global.vipUserRemoteSessions.get(cleanNumber);
-    if (!session) {
-        session = { folderIndex: 0, videoIndex: 0, lastActionTime: 0 };
-        global.vipUserRemoteSessions.set(cleanNumber, session);
-    }
-
-    // Debounce to prevent double tap
-    const now = Date.now();
-    if (now - (session.lastActionTime || 0) < 600) return;
-    session.lastActionTime = now;
-
-    const catalog = getCatalog();
-    const currentFolder = catalog[session.folderIndex] || catalog[0];
-    const videos = currentFolder.videos || [];
-
-    if (optionName.includes("Next Video")) {
-        session.videoIndex = (session.videoIndex + 1) % Math.max(1, videos.length);
-        await sendWhatsAppRemoteCard(sock, senderJid, cleanNumber, false);
-    } else if (optionName.includes("Previous Video")) {
-        session.videoIndex = (session.videoIndex - 1 + videos.length) % Math.max(1, videos.length);
-        await sendWhatsAppRemoteCard(sock, senderJid, cleanNumber, false);
-    } else if (optionName.includes("Next Folder")) {
-        session.folderIndex = (session.folderIndex + 1) % catalog.length;
-        session.videoIndex = 0;
-        await sendWhatsAppRemoteCard(sock, senderJid, cleanNumber, false);
-    } else if (optionName.includes("Previous Folder")) {
-        session.folderIndex = (session.folderIndex - 1 + catalog.length) % catalog.length;
-        session.videoIndex = 0;
-        await sendWhatsAppRemoteCard(sock, senderJid, cleanNumber, false);
-    } else if (optionName.includes("SEND THIS VIDEO")) {
-        const targetVideo = videos[session.videoIndex];
-        if (targetVideo) {
-            await sock.sendMessage(senderJid, {
-                text: `⏳ *"${targetVideo.title}"* සූදානම් කරමින් පවතී... WhatsApp වෙත Document එකක් ලෙස එවනු ඇත.`
-            });
-            if (typeof global.dispatchVipVideoToWhatsApp === 'function') {
-                await global.dispatchVipVideoToWhatsApp(senderJid, targetVideo);
-            }
-        }
-    } else if (optionName.includes("Show Full Video List")) {
-        let listText = `👑 *DMC™ VIP VIDEO CATALOG* 🎬\n\n`;
-        catalog.forEach((f, fIdx) => {
-            listText += `📁 *${f.name}:*\n`;
-            (f.videos || []).forEach((v, vIdx) => {
-                listText += `  • [${v.code || (vIdx + 1)}] *${v.title}* (${v.sizeFmt || 'HD'})\n`;
-            });
-            listText += `\n`;
-        });
-        listText += `💡 _ඕනෑම Video එකක් ලබාගැනීමට \`.v <Code>\` ලෙස එවන්න (උදා: \`.v 01\`)_`;
-        await sock.sendMessage(senderJid, { text: listText });
-    }
-};
-
 // 1. Main Command: .xrd (VIP Video Remote Controller)
 cmd({
     pattern: "xrd",
-    alias: ["xrdremote", "vipremote", "tvremote"],
-    desc: "Open VIP Live Video Remote Controller (WhatsApp Native + Web)",
+    alias: ["xrdremote", "vipremote", "tvremote", "collage", "general", "41"],
+    desc: "Open VIP Live Video Remote Controller (Collage-Centric)",
     category: "vip",
     react: "🎮"
 }, async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
         const senderJid = sender || mek.key.participant || from;
-        
-        // 🔒 VIP Authorization Check with real-time multi-device & MongoDB lookup
         const vipAuth = await isVipUser(senderJid, isOwner, conn, mek);
         const cleanNumber = vipAuth.cleanNumber;
 
-        console.log(`👑 [VIP Remote] .xrd triggered by ${senderJid} (Normalized: ${cleanNumber}) => VIP: ${vipAuth.isVip}`);
+        console.log(`👑 [VIP Remote] .xrd triggered by ${senderJid} => VIP: ${vipAuth.isVip}`);
 
         if (!vipAuth.isVip) {
             return await reply(
@@ -335,16 +308,96 @@ cmd({
             );
         }
 
-        // Send WhatsApp Native Controller (Card + Poll) - Works 100% on WhatsApp Packages!
-        await sendWhatsAppRemoteCard(conn, from, cleanNumber, isOwner);
+        await sendWhatsAppCollageRemoteCard(conn, from, cleanNumber, isOwner);
 
     } catch (e) {
         console.error("VIP Remote Error:", e);
-        await reply("⚠️ Controller එක open කිරීමේදී දෝෂයක් සිදුවිය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.");
+        await reply("⚠️ Controller එක open කිරීමේදී දෝෂයක් සිදුවිය.");
     }
 });
 
-// 2. Direct Jump by Digits Command: .v <code/number>
+// 2. Next Collage Navigation: .vn / .next
+cmd({
+    pattern: "vn",
+    alias: ["vnext", "next", "nextcollage"],
+    desc: "Switch to Next Collage Photo",
+    category: "vip",
+    react: "▶️"
+}, async (conn, mek, m, { from, sender, isOwner }) => {
+    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
+    if (!vipAuth.isVip) return;
+    const collages = await getCollagesCatalog();
+    if (!collages || collages.length === 0) return;
+
+    let s = global.vipUserRemoteSessions.get(vipAuth.cleanNumber) || { collageIndex: 0 };
+    s.collageIndex = ((s.collageIndex || 0) + 1) % collages.length;
+    global.vipUserRemoteSessions.set(vipAuth.cleanNumber, s);
+    await sendWhatsAppCollageRemoteCard(conn, from, vipAuth.cleanNumber, isOwner);
+});
+
+// 3. Previous Collage Navigation: .vp / .prev
+cmd({
+    pattern: "vp",
+    alias: ["vprev", "prev", "prevcollage"],
+    desc: "Switch to Previous Collage Photo",
+    category: "vip",
+    react: "◀️"
+}, async (conn, mek, m, { from, sender, isOwner }) => {
+    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
+    if (!vipAuth.isVip) return;
+    const collages = await getCollagesCatalog();
+    if (!collages || collages.length === 0) return;
+
+    let s = global.vipUserRemoteSessions.get(vipAuth.cleanNumber) || { collageIndex: 0 };
+    s.collageIndex = ((s.collageIndex || 0) - 1 + collages.length) % collages.length;
+    global.vipUserRemoteSessions.set(vipAuth.cleanNumber, s);
+    await sendWhatsAppCollageRemoteCard(conn, from, vipAuth.cleanNumber, isOwner);
+});
+
+// Helper: Deliver Video to Chat (Local file priority, fallback to GramJS Telegram Topic 6)
+async function deliverVideoToChat(conn, from, targetVideo, mek) {
+    const title = targetVideo.title || targetVideo.fileName || `Video ${targetVideo.code}`;
+    const code = targetVideo.code || '';
+    const sizeFmt = targetVideo.sizeFmt || 'HD';
+    const fileName = targetVideo.fileName || `${title}.mp4`;
+
+    // 1. Send from local disk if file exists
+    if (targetVideo.filePath && fs.existsSync(targetVideo.filePath)) {
+        await conn.sendMessage(from, { text: `⏳ *"${fileName}"* (${sizeFmt}) සූදානම් කරමින් පවතී... WhatsApp වෙත Document එකක් ලෙස එවනු ඇත. 🚀` }, { quoted: mek });
+        return await conn.sendMessage(from, {
+            document: fs.readFileSync(targetVideo.filePath),
+            mimetype: 'video/mp4',
+            fileName: fileName,
+            caption: `🎬 *[${code}] ${title}*\n💾 *Size:* ${sizeFmt}\n👑 *DMC™ VIP Video Stream*`
+        }, { quoted: mek });
+    }
+
+    // 2. Download from Telegram Topic 6 via GramJS MTProto
+    await conn.sendMessage(from, { text: `⏳ *"${fileName}"* (${sizeFmt}) Telegram වෙතින් ලබාගනිමින් පවතී... WhatsApp වෙත එවනු ඇත. 🚀` }, { quoted: mek });
+
+    try {
+        const { downloadTelegramVideo } = require('../lib/telegramDownloader');
+        const targetChatId = targetVideo.chatId || -1004382943539;
+        const targetMsgId = targetVideo.messageId;
+        const downloadedPath = await downloadTelegramVideo(targetChatId, targetMsgId, fileName);
+
+        if (downloadedPath && fs.existsSync(downloadedPath)) {
+            await conn.sendMessage(from, {
+                document: fs.readFileSync(downloadedPath),
+                mimetype: targetVideo.mimeType || 'video/mp4',
+                fileName: fileName,
+                caption: `🎬 *[${code}] ${title}*\n💾 *Size:* ${sizeFmt}\n👑 *DMC™ VIP Video Stream*`
+            }, { quoted: mek });
+            try { fs.unlinkSync(downloadedPath); } catch (_) {}
+            return;
+        }
+    } catch (tgErr) {
+        console.error("Telegram download error:", tgErr.message);
+        await conn.sendMessage(from, { text: `⚠️ Telegram වෙතින් Video එක ලබාගැනීමේදී දෝෂයක් සිදුවිය: ${tgErr.message}` }, { quoted: mek });
+    }
+}
+
+// 4. Direct Video Download: .v <code/number>
 cmd({
     pattern: "v",
     alias: ["getv", "xrdv"],
@@ -357,93 +410,122 @@ cmd({
         const vipAuth = await isVipUser(senderJid, isOwner, conn, mek);
 
         if (!vipAuth.isVip) {
-            return await reply("⛔ *ACCESS DENIED:* ඔබට VIP Access නොමැත.");
+            return await reply("⛔ *ACCESS DENIED:* ඔබට VIP Access නොමැත. Owner (+94717884174) සම්බන්ධ කරගන්න.");
         }
 
-        const codeQuery = (args[0] || '').trim().toLowerCase();
-        if (!codeQuery) {
-            return await reply("💡 *භාවිතය:* `.v <code/number>` (උදා: `.v 01` හෝ `.v 05`)");
+        const rawCode = (args[0] || '').trim().toLowerCase();
+        if (!rawCode) {
+            return await reply("💡 *භාවිතය:* `.v <code/number>` (උදා: `.v 01` හෝ `.v 10`)");
         }
 
-        const catalog = getCatalog();
-        let targetVideo = null;
-        for (const f of catalog) {
-            for (const v of (f.videos || [])) {
-                if (String(v.code).toLowerCase() === codeQuery || String(v.title).toLowerCase().includes(codeQuery)) {
-                    targetVideo = v;
-                    break;
-                }
+        let codeQuery = rawCode.replace(/^#/, '').replace(/^general\s*/i, '').trim();
+        if (codeQuery.length === 1) codeQuery = '0' + codeQuery;
+
+        // 1. Direct Check from Local 4,1 Folder
+        const local41 = getLocalSection41Videos();
+        if (local41 && local41.videos) {
+            const localMatch = local41.videos.find(v => 
+                String(v.code) === codeQuery ||
+                String(v.code) === codeQuery.replace(/^0+/, '') ||
+                v.fileName.toLowerCase().includes(codeQuery)
+            );
+
+            if (localMatch && fs.existsSync(localMatch.filePath)) {
+                return await deliverVideoToChat(conn, from, localMatch, mek);
             }
-            if (targetVideo) break;
         }
+
+        // 2. Check MongoDB telegram_videos
+        let targetVideo = null;
+        try {
+            const { MongoClient } = require('mongodb');
+            if (process.env.MONGODB_URI) {
+                const client = new MongoClient(process.env.MONGODB_URI);
+                await client.connect();
+                targetVideo = await client.db('whatsapp_bot').collection('telegram_videos').findOne({
+                    $or: [
+                        { code: codeQuery },
+                        { code: codeQuery.replace(/^0+/, '') },
+                        { code: '0' + codeQuery.replace(/^0+/, '') }
+                    ]
+                });
+                await client.close();
+            }
+        } catch (_) {}
 
         if (!targetVideo) {
-            return await reply(`⚠️ අංක "${codeQuery}" ට අදාළ Video එකක් හමුනොවීය. කරුණාකර .xrd මඟින් Remote එක Open කර Code එක පරීක්ෂා කරන්න.`);
+            return await reply(`⚠️ අංක "${codeQuery}" ට අදාළ Video එකක් හමුනොවීය. කරුණාකර .xrd මඟින් Collage එක Open කර Code එක පරීක්ෂා කරන්න.`);
         }
 
-        await reply(`⏳ *"${targetVideo.title}"* සූදානම් කරමින් පවතී... WhatsApp වෙත එවනු ඇත.`);
-
-        if (typeof global.dispatchVipVideoToWhatsApp === 'function') {
-            await global.dispatchVipVideoToWhatsApp(from, targetVideo);
-        } else {
-            await reply(`🎬 *[VIP VIDEO READY]*\n\n📁 Title: ${targetVideo.title}\n💾 Size: ${targetVideo.sizeFmt || 'HD'}\n🔗 Link: ${targetVideo.url || targetVideo.downloadUrl}`);
-        }
+        await deliverVideoToChat(conn, from, targetVideo, mek);
 
     } catch (err) {
-        console.error("Quick Jump Error:", err);
-        await reply("⚠️ Video එක ලබාගැනීමේදී දෝෂයක් සිදුවිය.");
+        console.error("Video dispatch error:", err);
+        await reply(`⚠️ Video එක ලබාගැනීමේදී දෝෂයක් සිදුවිය: ${err.message}`);
     }
 });
 
-// 3. Quick Text Remote Navigators (.vn, .vp, .vf, .vok, .vlist)
-cmd({ pattern: "vn", alias: ["vnext"], desc: "Remote: Next Video", category: "vip" }, async (conn, mek, m, { from, sender, isOwner }) => {
-    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
-    if (!vipAuth.isVip) return;
-    let s = global.vipUserRemoteSessions.get(vipAuth.cleanNumber) || { folderIndex: 0, videoIndex: 0 };
-    const catalog = getCatalog();
-    const curFolder = catalog[s.folderIndex] || catalog[0];
-    s.videoIndex = (s.videoIndex + 1) % Math.max(1, curFolder.videos.length);
-    global.vipUserRemoteSessions.set(vipAuth.cleanNumber, s);
-    await sendWhatsAppRemoteCard(conn, from, vipAuth.cleanNumber, isOwner);
-});
+// 5. Direct Digits Body Listener (e.g. typing 01, 02... 10, 11, etc. directly in chat)
+cmd({
+    on: "body"
+}, async (conn, mek, m, { from, body, isOwner, sender, reply }) => {
+    try {
+        const text = (body || '').trim();
+        const numMatch = text.match(/^[.#]?(\d{1,3})$/);
+        if (!numMatch) return;
+        let code = numMatch[1];
+        if (code.length === 1) code = '0' + code;
 
-cmd({ pattern: "vp", alias: ["vprev"], desc: "Remote: Prev Video", category: "vip" }, async (conn, mek, m, { from, sender, isOwner }) => {
-    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
-    if (!vipAuth.isVip) return;
-    let s = global.vipUserRemoteSessions.get(vipAuth.cleanNumber) || { folderIndex: 0, videoIndex: 0 };
-    const catalog = getCatalog();
-    const curFolder = catalog[s.folderIndex] || catalog[0];
-    s.videoIndex = (s.videoIndex - 1 + curFolder.videos.length) % Math.max(1, curFolder.videos.length);
-    global.vipUserRemoteSessions.set(vipAuth.cleanNumber, s);
-    await sendWhatsAppRemoteCard(conn, from, vipAuth.cleanNumber, isOwner);
-});
+        const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
+        if (!vipAuth.isVip) return;
 
-cmd({ pattern: "vf", alias: ["vfolder"], desc: "Remote: Next Folder", category: "vip" }, async (conn, mek, m, { from, sender, isOwner }) => {
-    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
-    if (!vipAuth.isVip) return;
-    let s = global.vipUserRemoteSessions.get(vipAuth.cleanNumber) || { folderIndex: 0, videoIndex: 0 };
-    const catalog = getCatalog();
-    s.folderIndex = (s.folderIndex + 1) % catalog.length;
-    s.videoIndex = 0;
-    global.vipUserRemoteSessions.set(vipAuth.cleanNumber, s);
-    await sendWhatsAppRemoteCard(conn, from, vipAuth.cleanNumber, isOwner);
-});
-
-cmd({ pattern: "vok", alias: ["vsend"], desc: "Remote: Send Current Video", category: "vip" }, async (conn, mek, m, { from, sender, isOwner, reply }) => {
-    const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
-    if (!vipAuth.isVip) return;
-    let s = global.vipUserRemoteSessions.get(vipAuth.cleanNumber) || { folderIndex: 0, videoIndex: 0 };
-    const catalog = getCatalog();
-    const curFolder = catalog[s.folderIndex] || catalog[0];
-    const targetVideo = curFolder.videos[s.videoIndex];
-    if (targetVideo) {
-        await reply(`⏳ *"${targetVideo.title}"* සූදානම් කරමින් පවතී... WhatsApp වෙත එවනු ඇත.`);
-        if (typeof global.dispatchVipVideoToWhatsApp === 'function') {
-            await global.dispatchVipVideoToWhatsApp(from, targetVideo);
+        // Check local
+        const local41 = getLocalSection41Videos();
+        if (local41 && local41.videos) {
+            const match = local41.videos.find(v => v.code === code || v.code === code.replace(/^0+/, ''));
+            if (match && fs.existsSync(match.filePath)) {
+                return await deliverVideoToChat(conn, from, match, mek);
+            }
         }
+
+        // Check Telegram / MongoDB
+        try {
+            const { MongoClient } = require('mongodb');
+            if (process.env.MONGODB_URI) {
+                const client = new MongoClient(process.env.MONGODB_URI);
+                await client.connect();
+                const targetVideo = await client.db('whatsapp_bot').collection('telegram_videos').findOne({
+                    $or: [{ code }, { code: code.replace(/^0+/, '') }]
+                });
+                await client.close();
+
+                if (targetVideo) {
+                    return await deliverVideoToChat(conn, from, targetVideo, mek);
+                }
+            }
+        } catch (_) {}
+    } catch (_) {}
+});
+
+// 6. Manual Sync Command: .sync
+cmd({
+    pattern: "sync",
+    alias: ["synctg", "syncvideos"],
+    desc: "Sync collages and videos from Telegram",
+    category: "vip"
+}, async (conn, mek, m, { reply, isOwner }) => {
+    if (!isOwner) return;
+    try {
+        await reply("🔄 *Telegram වෙතින් Collages සහ Videos Sync වෙමින් පවතී...*");
+        const { execFileSync } = require('child_process');
+        execFileSync(process.execPath, [path.join(__dirname, '../sync_telegram.js')], { stdio: 'pipe' });
+        await reply("✅ *Collages සහ Videos සාර්ථකව Sync විය! දැන් .xrd මඟින් අලුත් Collages බලන්න.*");
+    } catch (e) {
+        await reply(`❌ Sync දෝෂයක්: ${e.message}`);
     }
 });
 
+// 7. Full Video Catalog: .vlist
 cmd({
     pattern: "vlist",
     alias: ["vcatalog", "videos"],
@@ -452,16 +534,16 @@ cmd({
 }, async (conn, mek, m, { from, sender, isOwner }) => {
     const vipAuth = await isVipUser(sender || from, isOwner, conn, mek);
     if (!vipAuth.isVip) return;
-    const catalog = await getLiveCatalog();
-    let listText = `👑 *DMC™ VIP VIDEO CATALOG* 🎬\n\n`;
-    catalog.forEach((f, fIdx) => {
-        listText += `📁 *[${fIdx + 1}] ${f.name}:*\n`;
-        (f.videos || []).forEach((v, vIdx) => {
-            listText += `  • [${v.code || (vIdx + 1)}] *${v.title}* (${v.sizeFmt || 'HD'})\n`;
+    const collages = await getCollagesCatalog();
+    let listText = `👑 *DMC™ VIP COLLAGE & VIDEO CATALOG* 🎬\n\n`;
+    collages.forEach(c => {
+        listText += `🖼️ *#Collage${c.collageNum}* (${c.videos.length} Videos):\n`;
+        (c.videos || []).forEach(v => {
+            listText += `  • [${v.code}] *${v.title}* (${v.sizeFmt || 'HD'})\n`;
         });
         listText += `\n`;
     });
-    listText += `💡 _ඕනෑම Video එකක් ලබාගැනීමට \`.v <Code>\` ලෙස එවන්න (උදා: \`.v 01\`)_`;
+    listText += `💡 _ඕනෑම Video එකක් ලබාගැනීමට \`.v <Code>\` ලෙස එවන්න (උදා: \`.v 01\` හෝ \`.v 10\`)_`;
     await conn.sendMessage(from, { text: listText });
 });
 
@@ -469,5 +551,8 @@ module.exports = {
     extractCleanNumber,
     isVipUser,
     generateVipToken,
-    sendWhatsAppRemoteCard
+    sendWhatsAppRemoteCard: sendWhatsAppCollageRemoteCard,
+    sendWhatsAppCollageRemoteCard,
+    getCollagesCatalog,
+    getLocalSection41Videos
 };

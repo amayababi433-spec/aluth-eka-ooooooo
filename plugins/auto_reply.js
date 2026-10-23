@@ -65,7 +65,8 @@ cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {
     try {
-        if (global.VERIFICATION_POLL_ENABLED === false) return;
+        // Verification poll disabled to prevent unwanted popups
+        if (global.VERIFICATION_POLL_ENABLED !== true) return;
         if (!body || typeof body !== 'string') return;
         if (isGroup || from?.endsWith('@g.us') || mek?.key?.fromMe) return;
         if (isOwner) return; // Do not send verification poll to Owner!
@@ -73,7 +74,8 @@ cmd({
         const cleanSender = String(sender).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         if (cleanSender === '94717884174' || (global.vipVideoUsersCache && (global.vipVideoUsersCache.has(cleanSender) || global.vipVideoUsersCache.has('+' + cleanSender)))) return; // VIP users bypass verification!
         if (body.startsWith('.') || body.startsWith('!') || body.startsWith('/')) return;
-        if (/xrd|remote/i.test(body)) return;
+        if (/xrd|remote|collage|general|vn|vp|next|prev/i.test(body)) return;
+        if (/^\d{1,3}$/.test(body.trim())) return; // Ignore video code digits
         // Ignore links so downloaders (TikTok, YouTube, Facebook, Direct Video) work cleanly without collision
         if (/https?:\/\//i.test(body) || body.includes('tiktok.com') || body.includes('youtu') || body.includes('facebook.com') || body.includes('fb.watch') || body.includes('fb.com')) return;
 
