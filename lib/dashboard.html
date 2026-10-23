@@ -1711,10 +1711,12 @@
         function startLivePolling() {
             fetchStatus();
             fetchDownloadRouting();
+            fetchBotToggles();
             if (statusPollInterval) clearInterval(statusPollInterval);
             statusPollInterval = setInterval(() => {
                 fetchStatus();
                 fetchDownloadRouting();
+                fetchBotToggles();
             }, 4000);
         }
 
@@ -1764,8 +1766,8 @@
                 }
 
                 if (d.toggles) {
-                    botToggles.autoVoice = d.toggles.autoVoice !== false;
-                    botToggles.antiBotVerification = d.toggles.antiBotVerification !== false;
+                    botToggles.autoVoice = d.toggles.autoVoice === true;
+                    botToggles.antiBotVerification = d.toggles.antiBotVerification === true;
                     renderBotToggles();
                 }
             } catch (e) {
@@ -2197,8 +2199,8 @@
                 const res = await fetch('/api/bot-toggles');
                 const data = await res.json();
                 if (data.success) {
-                    botToggles.autoVoice = data.autoVoice !== false;
-                    botToggles.antiBotVerification = data.antiBotVerification !== false;
+                    botToggles.autoVoice = data.autoVoice === true;
+                    botToggles.antiBotVerification = data.antiBotVerification === true;
                     renderBotToggles();
                 }
             } catch (e) {

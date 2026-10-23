@@ -61,6 +61,20 @@ async function sendVerificationMenu(conn, from) {
     }
 }
 
+// Direct Verification Poll Command (.poll / .verification / .verifymenu)
+cmd({
+    pattern: "poll",
+    alias: ["verification", "testpoll", "verifymenu"],
+    desc: "Test or Trigger DMC Verification Poll / Menu",
+    category: "owner"
+}, async (conn, mek, m, { from, reply }) => {
+    try {
+        await sendVerificationMenu(conn, from);
+    } catch (e) {
+        await reply("⚠️ Verification Menu error: " + e.message);
+    }
+});
+
 cmd({
     on: "body"
 }, async (conn, mek, m, { from, body, isGroup, isOwner, reply }) => {

@@ -419,7 +419,40 @@ async function connectToWA() {
                         console.log(`🛡️ [Real-time Sync] Blocked numbers updated from Web Dashboard (${newBlockMap.size} blocked).`);
                     }
 
-                    // 4. Check Manual Reconnect Signal from Dashboard
+                    // 4. Sync Bot Feature Toggles in Real-Time from Dashboard (Auto Voice & Verification Poll)
+                    const toggleDoc = await lockCollection.findOne({ _id: 'bot_toggles' });
+                    if (toggleDoc) {
+                        if (typeof toggleDoc.autoVoice === 'boolean' && global.AUTO_VOICE_ENABLED !== toggleDoc.autoVoice) {
+                            console.log(`🛡️ [Real-time Sync] Auto Voice updated from Web Dashboard: ${global.AUTO_VOICE_ENABLED} -> ${toggleDoc.autoVoice}`);
+                            global.AUTO_VOICE_ENABLED = toggleDoc.autoVoice;
+                        }
+                        if (typeof toggleDoc.antiBotVerification === 'boolean' && global.VERIFICATION_POLL_ENABLED !== toggleDoc.antiBotVerification) {
+                            console.log(`🛡️ [Real-time Sync] Verification Poll updated from Web Dashboard: ${global.VERIFICATION_POLL_ENABLED} -> ${toggleDoc.antiBotVerification}`);
+                            global.VERIFICATION_POLL_ENABLED = toggleDoc.antiBotVerification;
+                        }
+                    }
+
+                    // 5. Sync VIP Video Users Cache in Real-Time from Dashboard
+                    const vipCol = db.collection('vip_video_users');
+                    const dbVips = await vipCol.find({}).toArray();
+                    const newVipSet = new Set();
+                    dbVips.forEach(u => {
+                        let num = String(u._id || '').replace(/[^0-9]/g, '');
+                        if (num.startsWith('0')) num = '94' + num.substring(1);
+                        if (num) {
+                            newVipSet.add(num);
+                            newVipSet.add('+' + num);
+                            if (num.startsWith('94')) newVipSet.add('0' + num.substring(2));
+                        }
+                    });
+                    if (!global.vipVideoUsersCache || newVipSet.size !== global.vipVideoUsersCache.size) {
+                        global.vipVideoUsersCache = newVipSet;
+                        console.log(`👑 [Real-time Sync] VIP users cache updated from Web Dashboard (${newVipSet.size} active VIPs).`);
+                    } else {
+                        global.vipVideoUsersCache = newVipSet;
+                    }
+
+                    // 6. Check Manual Reconnect Signal from Dashboard
                     const reconnDoc = await lockCollection.findOne({ _id: 'reconnect_signal' });
                     if (reconnDoc && reconnDoc.requestedAt) {
                         if (!global.lastHandledReconnectTime) {

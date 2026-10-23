@@ -26,10 +26,8 @@ function extractCleanNumber(jid) {
     return raw;
 }
 
-// Helper: Check if sender is VIP or Owner (with Multi-Device, LID, Cache & MongoDB Direct Verification)
+// Helper: Check if sender is VIP (Strictly based on VIP User Access Manager in Dashboard/MongoDB)
 async function isVipUser(senderJid, isOwner, conn, mek) {
-    if (isOwner) return { isVip: true, cleanNumber: '94717884174' };
-
     const candidates = [
         senderJid,
         mek?.key?.participant,
@@ -43,19 +41,16 @@ async function isVipUser(senderJid, isOwner, conn, mek) {
         let clean = extractCleanNumber(jid);
         if (clean) lastClean = clean;
 
-        // 1. Owner check
-        if (clean === '94717884174' || clean === (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '')) {
-            return { isVip: true, cleanNumber: clean };
-        }
-
-        // 2. In-Memory Cache check
-        if (global.vipVideoUsersCache) {
-            if (global.vipVideoUsersCache.has(clean) || global.vipVideoUsersCache.has('+' + clean) || global.vipVideoUsersCache.has('0' + clean.substring(2))) {
+        // 1. In-Memory Cache check (Strictly synced every 2.5s with MongoDB vip_video_users)
+        if (global.vipVideoUsersCache && global.vipVideoUsersCache.size > 0) {
+            if (global.vipVideoUsersCache.has(clean) || 
+                global.vipVideoUsersCache.has('+' + clean) || 
+                (clean.startsWith('94') && global.vipVideoUsersCache.has('0' + clean.substring(2)))) {
                 return { isVip: true, cleanNumber: clean };
             }
         }
 
-        // 3. Resolve LID to Real Phone Number if applicable
+        // 2. Resolve LID to Real Phone Number if applicable
         if (jid.includes('@lid') && conn?.signalRepository?.lidMapping?.getPNForLID) {
             try {
                 const pn = await conn.signalRepository.lidMapping.getPNForLID(jid);
@@ -63,7 +58,11 @@ async function isVipUser(senderJid, isOwner, conn, mek) {
                     const pnClean = extractCleanNumber(pn);
                     if (pnClean) {
                         lastClean = pnClean;
-                        if (global.vipVideoUsersCache && (global.vipVideoUsersCache.has(pnClean) || global.vipVideoUsersCache.has('+' + pnClean))) {
+                        if (global.vipVideoUsersCache && (
+                            global.vipVideoUsersCache.has(pnClean) || 
+                            global.vipVideoUsersCache.has('+' + pnClean) ||
+                            (pnClean.startsWith('94') && global.vipVideoUsersCache.has('0' + pnClean.substring(2)))
+                        )) {
                             return { isVip: true, cleanNumber: pnClean };
                         }
                         if (typeof global.checkIsVipNumberFromDB === 'function' && await global.checkIsVipNumberFromDB(pnClean)) {
@@ -74,7 +73,7 @@ async function isVipUser(senderJid, isOwner, conn, mek) {
             } catch (_) {}
         }
 
-        // 4. Direct MongoDB lookup fallback (100% real-time cross-instance reliability)
+        // 3. Direct MongoDB lookup fallback (100% real-time cross-instance reliability)
         if (typeof global.checkIsVipNumberFromDB === 'function' && clean) {
             const isVipDb = await global.checkIsVipNumberFromDB(clean);
             if (isVipDb) {
