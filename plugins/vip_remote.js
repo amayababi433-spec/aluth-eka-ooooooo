@@ -185,10 +185,36 @@ async function getCollagesCatalog() {
         console.error("Collage catalog load error:", e.message);
     }
 
-    // Fallback if DB empty
+    // Fallback: If DB empty, auto-sync from channel directly without needing GitHub
     if (collages.length === 0) {
+        try {
+            const { syncFromTelegram } = require('../lib/telegramSync');
+            await syncFromTelegram({ force: true });
+            const { MongoClient } = require('mongodb');
+            if (process.env.MONGODB_URI) {
+                const client = new MongoClient(process.env.MONGODB_URI);
+                await client.connect();
+                const db = client.db('whatsapp_bot');
+                const cList = await db.collection('telegram_collages').find().sort({ collageNum: 1 }).toArray();
+                const vList = await db.collection('telegram_videos').find().sort({ code: 1 }).toArray();
+                await client.close();
+                if (cList && cList.length > 0) {
+                    collages = cList.map(c => {
+                        const cVideos = vList.filter(v => v.collageNum === c.collageNum);
+                        return {
+                            collageNum: c.collageNum,
+                            caption: c.caption || `#General #Collage${c.collageNum}`,
+                            photoBase64: c.photoBase64,
+                            localPath: c.localPath,
+                            videos: cVideos
+                        };
+                    });
+                }
+            }
+        } catch (_) {}
+
         const local41 = getLocalSection41Videos();
-        if (local41 && local41.collagePath) {
+        if (collages.length === 0 && local41 && local41.collagePath) {
             collages.push({
                 collageNum: 2,
                 caption: '#General #Collage2',
@@ -224,7 +250,7 @@ async function getCollagesCatalog() {
 async function sendWhatsAppCollageRemoteCard(conn, toJid, cleanNumber, isOwner) {
     const collages = await getCollagesCatalog();
     if (!collages || collages.length === 0) {
-        return await conn.sendMessage(toJid, { text: "⚠️ Collages හමුනොවීය. කරුණාකර .sync මඟින් Telegram Collages Sync කරන්න." });
+        return await conn.sendMessage(toJid, { text: "⚠️ Collages හමුනොවීය. කරුණාකර .sync මඟින් Collages Sync කරන්න." });
     }
 
     let session = global.vipUserRemoteSessions.get(cleanNumber);
@@ -372,14 +398,14 @@ async function deliverVideoToChat(conn, from, targetVideo, mek) {
         }, { quoted: mek });
     }
 
-    // 2. Download from Telegram Topic 6 via GramJS MTProto
-    await conn.sendMessage(from, { text: `⏳ *"${fileName}"* (${sizeFmt}) Telegram වෙතින් ලබාගනිමින් පවතී... WhatsApp වෙත එවනු ඇත. 🚀` }, { quoted: mek });
+    // 2. Download via Bot API HTTP stream / MTProto
+    await conn.sendMessage(from, { text: `⏳ *"${fileName}"* (${sizeFmt}) සූදානම් කරමින් පවතී... WhatsApp වෙත Document එකක් ලෙස එවනු ඇත. 🚀` }, { quoted: mek });
 
     try {
         const { downloadTelegramVideo } = require('../lib/telegramDownloader');
         const targetChatId = targetVideo.chatId || -1004382943539;
         const targetMsgId = targetVideo.messageId;
-        const downloadedPath = await downloadTelegramVideo(targetChatId, targetMsgId, fileName);
+        const downloadedPath = await downloadTelegramVideo(targetChatId, targetMsgId, fileName, null, targetVideo.fileId);
 
         if (downloadedPath && fs.existsSync(downloadedPath)) {
             await conn.sendMessage(from, {
@@ -392,8 +418,8 @@ async function deliverVideoToChat(conn, from, targetVideo, mek) {
             return;
         }
     } catch (tgErr) {
-        console.error("Telegram download error:", tgErr.message);
-        await conn.sendMessage(from, { text: `⚠️ Telegram වෙතින් Video එක ලබාගැනීමේදී දෝෂයක් සිදුවිය: ${tgErr.message}` }, { quoted: mek });
+        console.error("Video download error:", tgErr.message);
+        await conn.sendMessage(from, { text: `⚠️ Video එක ලබාගැනීමේදී දෝෂයක් සිදුවිය: ${tgErr.message}` }, { quoted: mek });
     }
 }
 
@@ -510,16 +536,20 @@ cmd({
 // 6. Manual Sync Command: .sync
 cmd({
     pattern: "sync",
-    alias: ["synctg", "syncvideos"],
-    desc: "Sync collages and videos from Telegram",
+    alias: ["synccollages", "syncvideos"],
+    desc: "Sync collages and videos",
     category: "vip"
 }, async (conn, mek, m, { reply, isOwner }) => {
     if (!isOwner) return;
     try {
-        await reply("🔄 *Telegram වෙතින් Collages සහ Videos Sync වෙමින් පවතී...*");
-        const { execFileSync } = require('child_process');
-        execFileSync(process.execPath, [path.join(__dirname, '../sync_telegram.js')], { stdio: 'pipe' });
-        await reply("✅ *Collages සහ Videos සාර්ථකව Sync විය! දැන් .xrd මඟින් අලුත් Collages බලන්න.*");
+        await reply("🔄 *Collages සහ Videos Sync වෙමින් පවතී...*");
+        const { syncFromTelegram } = require('../lib/telegramSync');
+        const res = await syncFromTelegram({ force: true });
+        if (res.success) {
+            await reply(`✅ *Collages ${res.collages} ක් සහ Videos ${res.videos} ක් සාර්ථකව Sync විය! දැන් .xrd මඟින් අලුත් Collages බලන්න.*`);
+        } else {
+            await reply(`❌ Sync දෝෂයක්: ${res.error || 'දෝෂයක් සිදුවිය'}`);
+        }
     } catch (e) {
         await reply(`❌ Sync දෝෂයක්: ${e.message}`);
     }
