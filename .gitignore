@@ -16,3 +16,9 @@ run_bot.bat
 Modelfile.dmc
 gate_bypass.sh
 manual_update_guide.md
+
+# Obfuscated Collages (Only .enc files allowed on GitHub, plain images strictly ignored)
+cache_collages/*.jpg
+cache_collages/*.jpeg
+cache_collages/*.png
+!cache_collages/*.enc

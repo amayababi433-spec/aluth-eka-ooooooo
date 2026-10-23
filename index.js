@@ -373,19 +373,7 @@ async function connectToWA() {
                 }
             }, 5000);
 
-            // 🔄 Auto-Sync Channel Collages & Videos in background (no GitHub commits needed)
-            if (!global.autoSyncStarted) {
-                global.autoSyncStarted = true;
-                setTimeout(() => {
-                    try {
-                        const { syncFromTelegram } = require('./lib/telegramSync');
-                        syncFromTelegram().catch(() => {});
-                        setInterval(() => {
-                            syncFromTelegram().catch(() => {});
-                        }, 3 * 60 * 1000); // Auto-sync every 3 minutes
-                    } catch (_) {}
-                }, 8000);
-            }
+            // 🔄 Telegram Collages & Videos Sync is strictly manual via .sync command or Dashboard button to save CPU/RAM/Energy
 
             // 🔄 Real-Time Multi-Cloud Settings & Queue Sync (every 2.5 seconds)
             if (global.liveSettingsSyncTimer) clearInterval(global.liveSettingsSyncTimer);

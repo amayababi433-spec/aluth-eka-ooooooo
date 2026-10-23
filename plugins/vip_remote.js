@@ -184,33 +184,24 @@ async function getCollagesCatalog() {
         console.error("Collage catalog load error:", e.message);
     }
 
-    // Fallback: If DB empty, auto-sync from channel directly without needing GitHub
+    // Fallback: If DB empty, load encrypted local collages from cache_collages
     if (collages.length === 0) {
-        try {
-            const { syncFromTelegram } = require('../lib/telegramSync');
-            await syncFromTelegram({ force: true });
-            const { MongoClient } = require('mongodb');
-            if (process.env.MONGODB_URI) {
-                const client = new MongoClient(process.env.MONGODB_URI);
-                await client.connect();
-                const db = client.db('whatsapp_bot');
-                const cList = await db.collection('telegram_collages').find().sort({ collageNum: 1 }).toArray();
-                const vList = await db.collection('telegram_videos').find().sort({ code: 1 }).toArray();
-                await client.close();
-                if (cList && cList.length > 0) {
-                    collages = cList.map(c => {
-                        const cVideos = vList.filter(v => v.collageNum === c.collageNum);
-                        return {
-                            collageNum: c.collageNum,
-                            caption: c.caption || `#General #Collage${c.collageNum}`,
-                            photoBase64: c.photoBase64,
-                            localPath: c.localPath,
-                            videos: cVideos
-                        };
+        const cacheDir = path.join(__dirname, '../cache_collages');
+        if (fs.existsSync(cacheDir)) {
+            const encFiles = fs.readdirSync(cacheDir).filter(f => f.startsWith('collage_') && (f.endsWith('.enc') || f.endsWith('.jpg')));
+            if (encFiles.length > 0) {
+                encFiles.sort().forEach((f, idx) => {
+                    const numMatch = f.match(/collage_(\d+)\./);
+                    const num = numMatch ? parseInt(numMatch[1], 10) : idx + 1;
+                    collages.push({
+                        collageNum: num,
+                        caption: `#General #Collage${num}`,
+                        localPath: path.join(cacheDir, f),
+                        videos: []
                     });
-                }
+                });
             }
-        } catch (_) {}
+        }
 
         const local41 = getLocalSection41Videos();
         if (collages.length === 0 && local41 && local41.collagePath) {
@@ -228,16 +219,32 @@ async function getCollagesCatalog() {
         try { fs.mkdirSync(cacheDir, { recursive: true }); } catch (_) {}
     }
 
+    const { encryptCollageBuffer } = require('../lib/collageCrypto');
+
     collages.forEach(c => {
         if (!c.localPath || !fs.existsSync(c.localPath)) {
-            const targetFile = path.join(cacheDir, `collage_${c.collageNum}.jpg`);
-            if (c.photoBase64 && !fs.existsSync(targetFile)) {
+            const encFile = path.join(cacheDir, `collage_${c.collageNum}.enc`);
+            const targetJpg = path.join(cacheDir, `collage_${c.collageNum}.jpg`);
+
+            if (fs.existsSync(encFile)) {
+                c.localPath = encFile;
+            } else if (c.photoBase64) {
                 try {
-                    fs.writeFileSync(targetFile, Buffer.from(c.photoBase64, 'base64'));
-                    c.localPath = targetFile;
+                    const rawBuf = Buffer.from(c.photoBase64, 'base64');
+                    const encBuf = encryptCollageBuffer(rawBuf);
+                    fs.writeFileSync(encFile, encBuf);
+                    c.localPath = encFile;
                 } catch (_) {}
-            } else if (fs.existsSync(targetFile)) {
-                c.localPath = targetFile;
+            } else if (fs.existsSync(targetJpg)) {
+                try {
+                    const rawBuf = fs.readFileSync(targetJpg);
+                    const encBuf = encryptCollageBuffer(rawBuf);
+                    fs.writeFileSync(encFile, encBuf);
+                    try { fs.unlinkSync(targetJpg); } catch (_) {}
+                    c.localPath = encFile;
+                } catch (_) {
+                    c.localPath = targetJpg;
+                }
             }
         }
     });
@@ -291,12 +298,16 @@ async function sendWhatsAppCollageRemoteCard(conn, toJid, cleanNumber, isOwner) 
         `🔢 *.v <Code>* ➜  අංකයෙන් Video එක කෙළින්ම ගන්න (උදා: \`.v ${minCode}\`)\n` +
         `📑 *.vlist* ➜ සියලුම Videos Catalog එක බලන්න`;
 
-    // Collage Photo Buffer
+    // Collage Photo Buffer (Automatically Decrypted in Memory with 0 plain files on disk)
     let imgBuffer = null;
+    const { decryptCollageBuffer } = require('../lib/collageCrypto');
+
     if (currentCollage.localPath && fs.existsSync(currentCollage.localPath)) {
-        imgBuffer = fs.readFileSync(currentCollage.localPath);
+        const rawFileData = fs.readFileSync(currentCollage.localPath);
+        imgBuffer = decryptCollageBuffer(rawFileData);
     } else if (currentCollage.photoBase64) {
-        imgBuffer = Buffer.from(currentCollage.photoBase64, 'base64');
+        const rawData = Buffer.from(currentCollage.photoBase64, 'base64');
+        imgBuffer = decryptCollageBuffer(rawData);
     }
 
     if (imgBuffer) {
