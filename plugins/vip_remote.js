@@ -390,8 +390,13 @@ async function deliverVideoToChat(conn, from, targetVideo, mek) {
     // 1. Send from local disk if file exists
     if (targetVideo.filePath && fs.existsSync(targetVideo.filePath)) {
         await conn.sendMessage(from, { text: `⏳ *"${fileName}"* (${sizeFmt}) සූදානම් කරමින් පවතී... WhatsApp වෙත Document එකක් ලෙස එවනු ඇත. 🚀` }, { quoted: mek });
+        const localStat = fs.statSync(targetVideo.filePath);
+        const localDocPayload = localStat.size > 25 * 1024 * 1024
+            ? fs.createReadStream(targetVideo.filePath)
+            : fs.readFileSync(targetVideo.filePath);
+
         return await conn.sendMessage(from, {
-            document: fs.readFileSync(targetVideo.filePath),
+            document: localDocPayload,
             mimetype: 'video/mp4',
             fileName: fileName,
             caption: `🎬 *[${code}] ${title}*\n💾 *Size:* ${sizeFmt}\n👑 *DMC™ VIP Video Stream*`
@@ -408,8 +413,13 @@ async function deliverVideoToChat(conn, from, targetVideo, mek) {
         const downloadedPath = await downloadTelegramVideo(targetChatId, targetMsgId, fileName, null, targetVideo.fileId);
 
         if (downloadedPath && fs.existsSync(downloadedPath)) {
+            const dlStat = fs.statSync(downloadedPath);
+            const dlDocPayload = dlStat.size > 25 * 1024 * 1024
+                ? fs.createReadStream(downloadedPath)
+                : fs.readFileSync(downloadedPath);
+
             await conn.sendMessage(from, {
-                document: fs.readFileSync(downloadedPath),
+                document: dlDocPayload,
                 mimetype: targetVideo.mimeType || 'video/mp4',
                 fileName: fileName,
                 caption: `🎬 *[${code}] ${title}*\n💾 *Size:* ${sizeFmt}\n👑 *DMC™ VIP Video Stream*`
