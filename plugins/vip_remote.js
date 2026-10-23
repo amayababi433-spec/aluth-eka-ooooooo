@@ -326,8 +326,7 @@ cmd({
     pattern: "xrd",
     alias: ["collage", "general", "41", "videos", "gallery"],
     desc: "Open VIP Video Gallery (Collage-Centric)",
-    category: "vip",
-    react: "🎬"
+    category: "vip"
 }, async (conn, mek, m, { from, sender, isOwner, reply }) => {
     try {
         const senderJid = sender || mek.key.participant || from;
@@ -336,19 +335,13 @@ cmd({
 
         console.log(`👑 [VIP Gallery] .xrd triggered by ${senderJid} => VIP: ${vipAuth.isVip}`);
 
-        if (!vipAuth.isVip) {
-            return await reply(
-                "⛔ *ACCESS DENIED (VIP ONLY)* ⛔\n\n" +
-                "මෙම විශේෂිත Video Gallery එක ලබාගැනීමට ඔබට අවසර (VIP Access) නොමැත.\n\n" +
-                "💡 _අවසර ලබාගැනීම සඳහා කරුණාකර Bot Owner (+94717884174) සම්බන්ධ කරගන්න._"
-            );
-        }
+        // Strictly silent for non-VIP users: No reaction, no ACCESS DENIED message, zero response
+        if (!vipAuth.isVip) return;
 
         await sendWhatsAppCollageRemoteCard(conn, from, cleanNumber, isOwner);
 
     } catch (e) {
         console.error("VIP Gallery Error:", e);
-        await reply("⚠️ Video Gallery එක open කිරීමේදී දෝෂයක් සිදුවිය.");
     }
 });
 
@@ -448,16 +441,14 @@ cmd({
     pattern: "v",
     alias: ["getv", "xrdv"],
     desc: "Quick Jump & Get Video by Code",
-    category: "vip",
-    react: "🎬"
+    category: "vip"
 }, async (conn, mek, m, { from, sender, isOwner, args, reply }) => {
     try {
         const senderJid = sender || mek.key.participant || from;
         const vipAuth = await isVipUser(senderJid, isOwner, conn, mek);
 
-        if (!vipAuth.isVip) {
-            return await reply("⛔ *ACCESS DENIED:* ඔබට VIP Access නොමැත. Owner (+94717884174) සම්බන්ධ කරගන්න.");
-        }
+        // Strictly silent for non-VIP users: Zero response
+        if (!vipAuth.isVip) return;
 
         const rawCode = (args[0] || '').trim().toLowerCase();
         if (!rawCode) {
